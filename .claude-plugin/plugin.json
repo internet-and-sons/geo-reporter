@@ -1,7 +1,7 @@
 {
   "name": "geo-reporter",
   "description": "GEO Reporter — AI Search Visibility Audits for Claude Code. Full GEO audits, citability scoring, AI crawler analysis, llms.txt, brand mentions, schema, content quality, and client-ready PDF reports.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": {
     "name": "Tal Oron",
     "email": "tal@internetandsons.com"
