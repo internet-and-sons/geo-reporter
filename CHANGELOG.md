@@ -8,14 +8,21 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-21
+
+**Theme: plugin distribution.** The repo is now installable as a Claude Code plugin from a marketplace, and the README is rewritten for non-technical Claude Desktop users (Customize → Personal plugins → Create marketplace). The legacy `./install.sh` path is preserved for development and unusual setups.
+
 ### Added
 
-- **Claude plugin support** — repo is now installable as a Claude Code plugin via `/plugin add <repo-url>`. Adds `.claude-plugin/plugin.json` manifest and a `geo-reporter-setup` skill for first-run Python dependency installation.
+- **Claude Code plugin support** — repo is installable as a plugin via `/plugin marketplace add https://github.com/internet-and-sons/geo-reporter` followed by `/plugin install geo-reporter`. Adds `.claude-plugin/plugin.json` (plugin manifest) and `.claude-plugin/marketplace.json` (marketplace descriptor).
+- **`geo-reporter-setup` skill** — one-time `/geo-reporter:setup` command that installs Python dependencies after first install. Uses `python3 -m pip` to avoid interpreter-mismatch issues on macOS.
+- **Non-technical README rewrite** — leads with the Claude Desktop UI install flow; CLI shown as alternative. Developer reference (manual install, project layout, How it works, scoring methodology, data storage, uninstall, releases) moved to `CONTRIBUTING.md`.
 
 ### Changed
 
-- **Main skill location** — `geo/SKILL.md` moved to `skills/geo/SKILL.md` to follow plugin layout convention. Legacy `install.sh` updated accordingly.
-- **Script paths in skills** — `geo-botaccess`, `geo-schema`, `geo-technical`, and `geo-report-pdf` now reference Python scripts via `${CLAUDE_PLUGIN_ROOT}/scripts/` instead of hardcoded `~/.claude/skills/geo/scripts/` or relative `scripts/` paths.
+- **Main skill location** — `geo/SKILL.md` moved to `skills/geo/SKILL.md` to follow plugin layout convention. `install.sh`, `dev-link.sh`, and `dev-unlink.sh` updated accordingly.
+- **Script paths in skills and agents** — `geo-botaccess`, `geo-schema`, `geo-technical`, `geo-report-pdf`, and the `geo-schema` agent now reference Python scripts via `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/..."`. The fallback preserves the legacy install path when running outside the plugin runtime.
+- **Repo URL canonicalised** — `install.sh`, `README.md`, `CONTRIBUTING.md`, and `CHANGELOG.md` link refs all point to `internet-and-sons/geo-reporter` (the active fork's actual remote) instead of stale `tzvister/geo-reporter` references.
 
 ## [0.2.0] — 2026-04-27
 
@@ -89,6 +96,7 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/tzvister/geo-reporter/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/tzvister/geo-reporter/releases/tag/v0.2.0
-[0.1.0]: https://github.com/tzvister/geo-reporter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.0
+[0.2.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.2.0
+[0.1.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.1.0
