@@ -36,7 +36,7 @@ print_warn()  { echo -e "${YELLOW}⚠${NC} $1"; }
 print_err()   { echo -e "${RED}✗${NC} $1"; }
 
 # ----- Sanity checks -----
-if [ ! -f "${REPO_DIR}/geo/SKILL.md" ]; then
+if [ ! -f "${REPO_DIR}/skills/geo/SKILL.md" ]; then
     print_err "Run this from the geo-reporter repo root."
     exit 1
 fi
@@ -68,7 +68,7 @@ print_info "Linking main /geo skill components..."
 mkdir -p "$INSTALL_DIR"
 # The main /geo skill expects SKILL.md, scripts/, schema/ inside its dir.
 # Link each piece individually so we can drop in the right source paths.
-link "${REPO_DIR}/geo/SKILL.md" "${INSTALL_DIR}/SKILL.md"
+link "${REPO_DIR}/skills/geo/SKILL.md" "${INSTALL_DIR}/SKILL.md"
 link "${REPO_DIR}/scripts" "${INSTALL_DIR}/scripts"
 link "${REPO_DIR}/schema" "${INSTALL_DIR}/schema"
 

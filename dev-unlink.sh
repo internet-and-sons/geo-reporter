@@ -28,7 +28,7 @@ NC='\033[0m'
 print_ok()   { echo -e "${GREEN}✓${NC} $1"; }
 print_info() { echo -e "${BLUE}→${NC} $1"; }
 
-if [ ! -f "${REPO_DIR}/geo/SKILL.md" ]; then
+if [ ! -f "${REPO_DIR}/skills/geo/SKILL.md" ]; then
     echo "Run this from the geo-reporter repo root."
     exit 1
 fi

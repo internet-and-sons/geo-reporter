@@ -7,7 +7,7 @@ set -euo pipefail
 # Highly influenced by zubair-trabzada/geo-seo-claude.
 # ============================================================
 
-REPO_URL="https://github.com/tzvister/geo-reporter.git"
+REPO_URL="https://github.com/internet-and-sons/geo-reporter.git"
 CLAUDE_DIR="${HOME}/.claude"
 SKILLS_DIR="${CLAUDE_DIR}/skills"
 AGENTS_DIR="${CLAUDE_DIR}/agents"
@@ -281,7 +281,7 @@ main() {
     echo "    /geo report <url>     Client-ready GEO report"
     echo "    /geo report-pdf       Generate PDF report from audit data"
     echo ""
-    echo "  Documentation: https://github.com/tzvister/geo-reporter"
+    echo "  Documentation: https://github.com/internet-and-sons/geo-reporter"
     echo ""
 }
 

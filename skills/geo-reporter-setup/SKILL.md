@@ -19,13 +19,15 @@ Python 3.8 or higher is required. If the version is lower than 3.8, stop and tel
 ## Step 2: Install Python dependencies
 
 ```bash
-pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
+python3 -m pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 ```
 
-If `pip` fails with a permissions error, try:
+If this fails with a permissions error, try:
 ```bash
-pip install --user -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
+python3 -m pip install --user -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 ```
+
+Note: `requirements.txt` already includes the Playwright Python package — only the browser binaries are optional (Step 4).
 
 ## Step 3: Verify core scripts are importable
 
@@ -35,15 +37,15 @@ python3 -c "import bs4, requests, validators; print('Core deps OK')"
 
 If this fails, report the exact error to the user.
 
-## Step 4: Optional — install Playwright for screenshot support
+## Step 4: Optional — install the Playwright Chromium browser
 
-Playwright is used by `fetch_page.py` to handle JavaScript-rendered pages and Cloudflare-protected sites. It is optional but recommended for accurate bot-access probing.
+The Playwright Python package was installed in Step 2. The browser binaries it drives are a separate ~200 MB download, used by `fetch_page.py` to handle JavaScript-rendered pages and Cloudflare-protected sites. Optional, but recommended for accurate bot-access probing.
 
-Ask the user: "Install Playwright for screenshot support? (Adds ~200 MB, enables JS-rendered page analysis)"
+Ask the user: "Install the Playwright Chromium browser? (Adds ~200 MB, enables JS-rendered page analysis)"
 
 If yes:
 ```bash
-pip install playwright && playwright install chromium
+python3 -m playwright install chromium
 ```
 
 ## Step 5: Report result
