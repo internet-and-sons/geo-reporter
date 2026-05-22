@@ -13,7 +13,7 @@
         "source": "url",
         "url": "https://github.com/internet-and-sons/geo-reporter.git"
       },
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "GEO Reporter — AI Search Visibility Audits for Claude Code. Full GEO audits, citability scoring, AI crawler analysis, llms.txt, brand mentions, schema, content quality, and client-ready PDF reports. Slash commands: /geo, /geo-reporter:setup.",
       "author": {
         "name": "Tal Oron",
