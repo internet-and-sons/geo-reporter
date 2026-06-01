@@ -169,52 +169,43 @@ This measures whether the content provides information that AI systems cannot fi
 
 ## Analysis Procedure
 
-### Step 1: Fetch and Parse Page Content
+The rubric above is the *reference* — the packaged scorer implements it deterministically. Use the scorer; the manual rubric only exists for understanding what the numbers mean and for writing rewrite recommendations.
 
-1. Use WebFetch to retrieve the target URL.
-2. Extract the main content area (exclude navigation, footer, sidebar, ads).
-3. Preserve heading structure (H1-H6 tags).
-4. Preserve paragraph boundaries, lists, and tables.
-5. Calculate total word count of main content.
+### Step 1: Run the packaged scorer
 
-### Step 2: Segment Content into Blocks
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/citability_scorer.py" <url>
+```
 
-1. Split content at each heading (H2 or H3) to create content blocks.
-2. For each block, record:
-   - The heading text
-   - The full text content under that heading
-   - Word count of the block
-   - Number of paragraphs
-   - Number of lists and tables
-   - Number of statistics/data points
-   - Whether the block contains a definition pattern
-   - Whether the first 60 words form a standalone answer
+This produces a single JSON object that already does Steps 1–4 of the previous procedure: fetches the page, strips nav/footer/sidebar/scripts/forms, segments into blocks at H1–H4 boundaries (with a 20-word minimum per block), and scores every block on the five dimensions.
 
-### Step 3: Score Each Block
+Fields:
 
-For each content block, calculate:
-- Answer Block Quality sub-score (0-100)
-- Self-Containment sub-score (0-100)
-- Structural Readability sub-score (0-100)
-- Statistical Density sub-score (0-100)
-- Uniqueness sub-score (0-100)
+| Field | Meaning |
+|---|---|
+| `total_blocks_analyzed` | Block count (≥20 words each) |
+| `average_citability_score` | Page Citability Score (0–100) |
+| `optimal_length_passages` | Blocks in the 134–167 word AI sweet spot |
+| `grade_distribution` | `{A, B, C, D, F}` counts |
+| `top_5_citable[]` | Strongest blocks — each has `heading`, `content`, `word_count`, `total_score`, `breakdown` (per-dimension), `grade` |
+| `bottom_5_citable[]` | Weakest blocks — same shape, these are your rewrite targets |
+| `all_blocks[]` | Every scored block |
 
-**Block Citability Score** = (Answer * 0.30) + (SelfContain * 0.25) + (Structure * 0.20) + (Stats * 0.15) + (Unique * 0.10)
+Read `top_5_citable` into the "Strongest Content Blocks" output section and `bottom_5_citable` into "Weakest Content Blocks (Rewrite Priority)". `average_citability_score` becomes the Page Citability Score in the summary.
 
-### Step 4: Calculate Page-Level Score
+### Step 2: Generate rewrite suggestions for weakest blocks
 
-1. Calculate the average of all block scores for the page-level citability score.
-2. Identify the top 3 highest-scoring blocks (highlight as strengths).
-3. Identify the bottom 3 lowest-scoring blocks (flag for rewriting).
-4. Calculate the percentage of blocks scoring above 70 (the "citability coverage" metric).
+For each entry in `bottom_5_citable` (or any block with `total_score < 60`), look at its `breakdown` to identify the primary weakness:
 
-### Step 5: Generate Rewrite Suggestions
+| Weakest dimension | Rewrite recommendation pattern |
+|---|---|
+| `answer_block_quality` (low) | Propose rewriting the opening sentence as a definition or direct answer ("X is …", "X refers to …", "X means …"). |
+| `self_containment` (low) | Suggest defining acronyms / pronouns / forward references on first use; recommend a 1-sentence summary at the top of the block. |
+| `structural_readability` (low) | Recommend converting prose to a list, table, or numbered steps; suggest bolding key terms. |
+| `statistical_density` (low) | Suggest adding specific numbers, percentages, dates, dollar amounts, or named entities. |
+| `uniqueness` (low) | Suggest adding original data (survey results, internal metrics, case-study numbers) or a perspective not found in obvious competing sources. |
 
-For each block scoring below 60, generate a specific rewrite suggestion:
-1. Identify the primary weakness (buried answer, lack of facts, poor structure, etc.).
-2. Propose a rewritten opening sentence using a definition or answer-first pattern.
-3. Suggest specific statistics or facts that could be added.
-4. Recommend structural improvements (add list, add table, split paragraph).
+Each rewrite suggestion should reference the block's heading and quote the first ~30 words so the reader knows exactly which passage you're talking about.
 
 ---
 

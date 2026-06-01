@@ -8,6 +8,20 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-06-01
+
+**Theme: deterministic citability scoring.** Citability is the single largest weight in the GEO Score (25%). The audit was producing it by having Claude hand-score every block in markdown against the five-dimension rubric — non-deterministic, slow, and capped at whatever blocks Claude remembered to score. The packaged `scripts/citability_scorer.py` (`analyze_page_citability(url)`) implements the same rubric deterministically and scores every block ≥20 words. It was orphaned.
+
+### Changed
+
+- **[`agents/geo-ai-visibility.md`](agents/geo-ai-visibility.md) Step 2** — switched from in-markdown rubric to invoking `citability_scorer.py <url>`. Output JSON's `top_5_citable[]` / `bottom_5_citable[]` / `average_citability_score` / `grade_distribution` are consumed by field name; rewrite suggestions are now targeted at the weakest dimension per block (using the per-block `breakdown`).
+- **[`skills/geo-citability/SKILL.md`](skills/geo-citability/SKILL.md)** — Analysis Procedure rewritten to invoke the scorer (Step 1) and produce rewrite suggestions from the per-dimension breakdown (Step 2). The rubric stays as reference documentation for what the numbers mean.
+
+### Fixed
+
+- **Non-deterministic citability scores** — two consecutive audits of the same URL now produce identical citability scores. (Hand-scored audits varied by 5–15 points across runs.)
+- **Block-coverage gap** — the scorer processes every block ≥20 words. Previously Claude scored 5–10 blocks per page; sites with many shorter passages had most of their content invisible to the audit.
+
 ## [0.3.3] — 2026-06-01
 
 **Theme: page-mode by default.** The audit orchestrator and every Phase-2 subagent were fetching the target URL with `WebFetch`, which converts HTML to markdown, strips `<head>` (losing JSON-LD, OG / Twitter Card, meta tags), discards HTTP headers, and silently returns empty pages for JS-rendered SPAs. The packaged `fetch_page.py <url> page` already returns a rich JSON with all of this — it was just orphaned outside `geo-schema`. This release wires it in everywhere.
@@ -143,7 +157,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.4
 [0.3.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.3
 [0.3.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.2
 [0.3.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.1

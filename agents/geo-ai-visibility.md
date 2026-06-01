@@ -36,23 +36,36 @@ Extract meaningful content blocks from `text_content` and the heading structure:
 
 ### Step 2: Citability Analysis
 
-Score every substantive content block on a 0-100 citability scale. Evaluate each block against these five dimensions:
+**Use the packaged scorer — do not hand-score in markdown.** Hand-scoring is non-deterministic (re-runs produce different numbers), processes only the blocks you remembered to score, and is slow. The packaged scorer is deterministic, scores every block, and runs in under a second.
 
-| Dimension | Weight | Criteria |
-|---|---|---|
-| Answer Block Quality | 25% | Does the passage directly answer a question in 1-3 sentences? Could an AI quote it verbatim as a response? |
-| Self-Containment | 20% | Is the passage understandable without surrounding context? Does it define its own terms? |
-| Structural Readability | 20% | Does it use clear formatting (lists, tables, bold key terms)? Is it scannable? |
-| Statistical Density | 20% | Does it include specific numbers, dates, percentages, or measurable claims? |
-| Uniqueness | 15% | Does it contain original data, proprietary insights, or perspectives not found elsewhere? |
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/citability_scorer.py" <url>
+```
 
-For each block:
-- Assign a score per dimension.
-- Calculate the weighted average as the block citability score.
-- Flag blocks scoring above 70 as "citation-ready."
-- Flag blocks scoring below 30 as "citation-unlikely."
+The output is a single JSON object with these fields — use them directly:
 
-Compute the **Page Citability Score** as the average of the top 5 scoring blocks (or all blocks if fewer than 5). This rewards pages that have at least some highly citable content.
+| Field | Meaning |
+|---|---|
+| `total_blocks_analyzed` | How many content blocks the scorer found (≥20 words each) |
+| `average_citability_score` | Mean score across all blocks (0–100) — this is the **Page Citability Score** |
+| `optimal_length_passages` | Count of passages in the 134–167 word "AI sweet spot" |
+| `grade_distribution` | `{A, B, C, D, F}` block counts |
+| `top_5_citable[]` | Top 5 blocks by score — citation-ready passages (each entry has heading, content, word_count, score breakdown, grade) |
+| `bottom_5_citable[]` | Bottom 5 blocks — citation-unlikely areas, the targets for rewrite recommendations |
+| `all_blocks[]` | Every scored block with full breakdown |
+
+Each block in `top_5_citable` / `bottom_5_citable` / `all_blocks` has:
+- `heading` (which section it came from), `content` (the passage text), `word_count`
+- `total_score` (0–100, weighted)
+- `breakdown` — per-dimension scores (`answer_block_quality`, `self_containment`, `structural_readability`, `statistical_density`, `uniqueness`)
+- `grade` — letter grade (A ≥85, B 70–84, C 55–69, D 40–54, F <40)
+
+In the report, surface:
+- Page Citability Score = `average_citability_score`
+- Top citation-ready passages: walk `top_5_citable` and report heading + first ~30 words of content + score
+- Citation-unlikely areas needing improvement: walk `bottom_5_citable`, report the same, and add a per-block rewrite suggestion (use the per-dimension breakdown to target the weakest dimension — e.g. if `statistical_density: 20`, suggest adding numbers/dates)
+
+The scoring rubric (which dimensions matter and how they're weighted) is documented in [`skills/geo-citability/SKILL.md`](../skills/geo-citability/SKILL.md). If `total_blocks_analyzed == 0`, the page has insufficient content for citability scoring — flag as a critical issue.
 
 ### Step 3: AI Crawler Access Check
 
