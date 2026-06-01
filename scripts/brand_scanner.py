@@ -260,7 +260,51 @@ def generate_brand_report(brand_name: str, domain: str = None) -> dict:
         "Monitor: Set up brand mention alerts across all platforms.",
     ]
 
+    # Compute baseline total_score (0-100) from API-verifiable signals only.
+    # Wikipedia + Wikidata are checked via API and produce real booleans;
+    # YouTube/Reddit/LinkedIn return check_instructions for the caller to
+    # follow up on via WebFetch. After the caller enriches the per-platform
+    # has_* fields, they can call compute_brand_score(report) to re-score.
+    report["total_score"] = compute_brand_score(report)
+
     return report
+
+
+def compute_brand_score(report: dict) -> int:
+    """Score 0-100 from per-platform boolean signals.
+
+    Weights mirror the audit rubric:
+      Wikipedia presence:   30
+      Reddit presence:      20
+      YouTube presence:     15
+      LinkedIn presence:    10
+      Industry sources:     25 (Crunchbase, G2, Trustpilot, etc.)
+    """
+    p = report.get("platforms", {})
+    score = 0
+
+    wiki = p.get("wikipedia", {})
+    if wiki.get("has_wikipedia_page") or wiki.get("has_wikidata_entry"):
+        score += 30
+
+    reddit = p.get("reddit", {})
+    if reddit.get("has_subreddit") or reddit.get("mentioned_in_discussions"):
+        score += 20
+
+    youtube = p.get("youtube", {})
+    if youtube.get("has_channel") or youtube.get("mentioned_in_videos"):
+        score += 15
+
+    linkedin = p.get("linkedin", {})
+    if linkedin.get("has_company_page"):
+        score += 10
+
+    # Industry sources — credit if ANY of the bundled platforms shows confirmed presence
+    other = p.get("other", {}).get("platforms_checked", {})
+    if any(v.get("confirmed", False) for v in other.values()):
+        score += 25
+
+    return min(score, 100)
 
 
 if __name__ == "__main__":

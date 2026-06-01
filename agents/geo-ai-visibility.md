@@ -145,65 +145,56 @@ If the live probe failed to run (network error, script not available), fall back
 
 ### Step 4: llms.txt Analysis
 
-Check for the presence of `/llms.txt` at the domain root.
+Use the packaged validator — do not hand-validate the format:
 
-If found:
-- Validate the format against the llms.txt specification:
-  - First line should be an H1 (`# Site Name`) with the site/project name.
-  - Optional blockquote description immediately after.
-  - Sections organized by H2 headings (`## Section`).
-  - Links in markdown format: `- [Title](url): Description`.
-  - Optional `## Optional` section for supplementary resources.
-- Check for `/llms-full.txt` (complete content version).
-- Evaluate completeness: Does it cover key pages, documentation, and resources?
-- Check if it references important content that AI models should prioritize.
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/llmstxt_generator.py" <url> validate
+```
 
-If not found:
-- Note the absence.
-- Recommend creation with a template based on the site type detected.
+The validator fetches `/llms.txt` and `/llms-full.txt` from the domain root, parses both against the spec (H1 site name, optional blockquote description, `## Section` H2 headings, `- [Title](url): Description` link items), and produces a single JSON object. Read these fields:
 
-Calculate **llms.txt Score**:
-- 0 if absent.
-- 30 if present but malformed.
-- 50 if present, valid format, but minimal content.
-- 70 if present, valid, and covers primary content areas.
-- 90-100 if comprehensive with llms-full.txt also available.
+| Field | Meaning |
+|---|---|
+| `exists` | `/llms.txt` present (HTTP 200) |
+| `format_valid` | Passes spec validation (title + description + sections + links all present) |
+| `has_title`, `has_description`, `has_sections`, `has_links` | Per-element boolean breakdown |
+| `section_count`, `link_count` | Counts |
+| `issues[]` | Specific format problems if invalid |
+| `suggestions[]` | Improvement recommendations |
+| `full_version.exists` | `/llms-full.txt` present |
+| `score` | **0–100, computed deterministically** from the booleans: 0 absent, 30 malformed, 50 valid minimal, 70 valid with ≥5 links and ≥2 sections, 90 same + llms-full.txt also present |
+
+Use `score` directly as the **llms.txt Score**. If `llms_txt.exists == false`, note the absence and recommend creation — the standalone `geo-llmstxt` skill can generate a template via `llmstxt_generator.py <url> generate` for site-type-specific output.
 
 ### Step 5: Brand Mention Scanning
 
-Search for the brand/site name across platforms frequently cited by AI models:
+Use the packaged scanner — **do not** hand-WebFetch each platform. The scanner uses platform-specific APIs (Wikipedia, Reddit JSON endpoint) and structured probes (YouTube, LinkedIn, industry sources), and produces a deterministic scored result.
 
-1. **YouTube**: Use WebFetch to search `site:youtube.com "brand name"` patterns. Check for official channel presence, video count, and engagement.
-2. **Reddit**: Search for brand mentions on Reddit. Check discussion sentiment, subreddit presence, and mention recency.
-3. **Wikipedia (CRITICAL — use API check, not just web search)**:
-   - **FIRST**, run the Wikipedia API directly via Bash to check definitively:
-     ```bash
-     python3 -c "
-     import requests; from urllib.parse import quote_plus
-     brand='[BRAND_NAME]'
-     r=requests.get(f'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={quote_plus(brand)}&format=json', headers={'User-Agent':'GEO-Audit/1.0'}, timeout=15)
-     results=r.json().get('query',{}).get('search',[])
-     if results and brand.lower() in results[0].get('title','').lower(): print(f'FOUND: https://en.wikipedia.org/wiki/{results[0][\"title\"].replace(\" \",\"_\")}')
-     else: print('NOT FOUND')
-     "
-     ```
-   - **SECOND**, try WebFetch on `https://en.wikipedia.org/wiki/[Brand_Name]` directly to verify.
-   - **DO NOT** rely solely on web search (`site:wikipedia.org`) — it frequently returns false negatives.
-   - This is the single strongest signal for entity recognition by AI models.
-4. **LinkedIn**: Check for company page presence and completeness.
-5. **Industry/Niche Sources**: Search for the brand on authoritative industry sites, review platforms (G2, Trustpilot, Capterra), and news outlets.
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/brand_scanner.py" "<brand name>" [domain]
+```
 
-For each platform, record:
-- **Present**: Active, recent presence found.
-- **Minimal**: Some presence but sparse or outdated.
-- **Absent**: No meaningful presence found.
+The brand name should be the business name as it appears on the site (not the domain) — extract from `meta_tags["og:site_name"]`, the `Organization` JSON-LD `name`, or the page title. Pass the domain as the optional second argument when available (improves Wikipedia and LinkedIn disambiguation).
 
-Calculate **Brand Mention Score**:
-- Wikipedia presence: 30 points (0 if absent).
-- Reddit discussion presence: 20 points (scale by recency and sentiment).
-- YouTube presence: 15 points.
-- LinkedIn presence: 10 points.
-- Industry/niche sources: 25 points (scale by number and quality).
+The output JSON has these fields:
+
+| Field | Meaning |
+|---|---|
+| `brand_name`, `domain` | What was scanned |
+| `platforms.wikipedia` | `{has_wikipedia_page, has_wikidata_entry, wikidata_id, wikidata_description, wikipedia_search_results}` — **API-verified** (Wikipedia + Wikidata, no false negatives) |
+| `platforms.reddit` | `{search_url, has_subreddit, mentioned_in_discussions, check_instructions[]}` — needs WebFetch enrichment to populate booleans |
+| `platforms.youtube` | `{search_url, has_channel, mentioned_in_videos, check_instructions[]}` — needs WebFetch enrichment |
+| `platforms.linkedin` | `{search_url, has_company_page, check_instructions[]}` — needs WebFetch enrichment |
+| `platforms.other.platforms_checked` | Pre-built `search_url` per platform (G2, Trustpilot, Crunchbase, Quora, Stack Overflow, GitHub, Product Hunt) — needs WebFetch enrichment |
+| `total_score` | 0–100 — **baseline** from API-verified signals only (Wikipedia + Wikidata). Re-score after enrichment. |
+| `overall_recommendations[]` | Cross-platform action items |
+
+**Two-pass usage** (don't skip pass 2):
+
+1. **Pass 1** — run `brand_scanner.py` and read the Wikipedia/Wikidata API results plus the pre-built `search_url` per platform. The baseline `total_score` reflects only what's API-verifiable.
+2. **Pass 2** — for each remaining platform, fetch its `search_url` via WebFetch, set the platform's `has_*` boolean to `true` if you find a real presence (active channel, company page, etc.), then recompute the score with the same weighting (Wikipedia 30 + Reddit 20 + YouTube 15 + LinkedIn 10 + Industry 25 — capped at 100). Industry credit requires marking at least one entry in `platforms.other.platforms_checked` as `confirmed: true`.
+
+Render the final per-platform status in the table with the source noted (`✓ API` vs `✓ WebFetch` vs `✗`). **Do not re-do the Wikipedia check by hand** — the scanner already called the Wikipedia API and the answer is definitive.
 
 ### Step 6: Compile AI Visibility Report Section
 
