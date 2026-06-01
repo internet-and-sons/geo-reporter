@@ -73,19 +73,27 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
 
 **Step 2: Crawl Sitemap and Internal Links**
 
-1. Attempt to fetch `/sitemap.xml` and `/sitemap_index.xml`.
-2. If sitemap exists, extract up to 50 unique page URLs prioritized by:
-   - Homepage (always include)
-   - Top-level navigation pages
-   - High-value pages (pricing, about, contact, key service/product pages)
-   - Blog posts (sample 5-10 most recent)
-   - Category/landing pages
-3. If no sitemap exists, crawl internal links from the homepage:
-   - Extract all `<a href>` links pointing to the same domain
-   - Follow up to 2 levels deep
-   - Prioritize pages linked from main navigation
-4. Respect `robots.txt` directives -- do not fetch disallowed paths.
-5. Enforce a maximum of 50 pages and a 30-second timeout per fetch.
+Use the packaged sitemap crawler — handles sitemap indexes recursively, respects the 50-page cap, and falls back gracefully if no sitemap is present:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> sitemap
+```
+
+Returns `{pages: [...], count: N}`. The crawler already attempts `/sitemap.xml` and `/sitemap_index.xml`, follows nested sitemap indexes, and caps at 50 unique URLs.
+
+If `count == 0`, no sitemap was discoverable. Fall back to internal-link crawling from the homepage's `internal_links` field (already collected in Step 1's `fetch_page.py page` output):
+- Use the homepage's `internal_links` as the level-1 set
+- Follow up to 2 levels deep, capped at 50 total URLs
+- Prioritize pages linked from main navigation
+
+For both paths: respect `robots.txt` (cross-reference with `fetch_page.py <url> robots`), skip pages disallowed for the default user-agent, and enforce a 30-second timeout per fetch.
+
+Page prioritization within the 50-page cap:
+- Homepage (always include)
+- Top-level navigation pages
+- High-value pages (pricing, about, contact, key service/product pages)
+- Blog posts (sample 5–10 most recent)
+- Category/landing pages
 
 **Step 3: Collect Page-Level Data**
 

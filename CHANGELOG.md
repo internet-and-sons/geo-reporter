@@ -8,6 +8,23 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-06-01
+
+**Theme: the last three orphans.** Three more packaged scripts that the audit had been hand-doing in markdown for: llms.txt validation, brand mention scanning, and sitemap crawling. All now wired into the orchestrator and the AI Visibility subagent. Closes the orphaned-deep-check audit started in v0.3.2.
+
+### Added
+
+- **`score` field on `validate_llmstxt()` output** — 0 / 30 / 50 / 70 / 90 deterministically derived from boolean validity signals. Skill instructions consume this directly; no hand-scoring.
+- **`total_score` field on `generate_brand_report()` output** — 0–100, weighted (Wikipedia 30 + Reddit 20 + YouTube 15 + LinkedIn 10 + Industry 25). API-verified Wikipedia/Wikidata signals populate automatically; the agent enriches the remaining platforms via WebFetch and recomputes the score.
+- **`compute_brand_score(report)` helper** in `brand_scanner.py` so the agent can re-score after WebFetch enrichment without duplicating logic.
+- **`tests/test_score_fields.py`** — 10 tests covering the canonical scale (0/30/50/70/90 for llms.txt; 0/30/65/100 combinations for brand). Locks in the contracts the skill instructions depend on.
+
+### Changed
+
+- **[`agents/geo-ai-visibility.md`](agents/geo-ai-visibility.md) Step 4 (llms.txt)** — invokes `llmstxt_generator.py <url> validate`; consumes `score`, `format_valid`, `has_title/description/sections/links`, `issues`, `suggestions`, `full_version.exists` by name. Docs corrected to match the actual flat schema (was previously documenting fictional nested fields).
+- **[`agents/geo-ai-visibility.md`](agents/geo-ai-visibility.md) Step 5 (brand mentions)** — invokes `brand_scanner.py "<brand>" [domain]`. Documents the **two-pass flow** (Pass 1 = API-verified Wikipedia/Wikidata baseline; Pass 2 = WebFetch enrichment for YouTube/Reddit/LinkedIn/industry → recompute with `compute_brand_score`). No more hand-rolling the Wikipedia API check.
+- **[`skills/geo-audit/SKILL.md`](skills/geo-audit/SKILL.md) Phase 1 Step 2 (sitemap crawl)** — invokes `fetch_page.py <url> sitemap` (uses the existing `crawl_sitemap()` which already handles sitemap-index recursion and the 50-page cap); falls back to `internal_links` from Step 1's page-mode output if no sitemap.
+
 ## [0.3.4] — 2026-06-01
 
 **Theme: deterministic citability scoring.** Citability is the single largest weight in the GEO Score (25%). The audit was producing it by having Claude hand-score every block in markdown against the five-dimension rubric — non-deterministic, slow, and capped at whatever blocks Claude remembered to score. The packaged `scripts/citability_scorer.py` (`analyze_page_citability(url)`) implements the same rubric deterministically and scores every block ≥20 words. It was orphaned.
@@ -157,7 +174,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.5
 [0.3.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.4
 [0.3.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.3
 [0.3.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.2

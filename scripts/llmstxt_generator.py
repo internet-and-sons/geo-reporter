@@ -124,6 +124,26 @@ def validate_llmstxt(url: str) -> dict:
     except Exception:
         pass
 
+    # Compute final score (0-100) deterministically from the boolean signals
+    # so callers don't have to re-derive it. Canonical scale:
+    #   0  — absent
+    #   30 — present but malformed
+    #   50 — valid format, minimal content (<5 links or <2 sections)
+    #   70 — valid format, primary content covered (≥5 links AND ≥2 sections)
+    #   90 — 70 + llms-full.txt also present
+    if not result["exists"]:
+        result["score"] = 0
+    elif not result["format_valid"]:
+        result["score"] = 30
+    else:
+        comprehensive = result["link_count"] >= 5 and result["section_count"] >= 2
+        if not comprehensive:
+            result["score"] = 50
+        elif result["full_version"]["exists"]:
+            result["score"] = 90
+        else:
+            result["score"] = 70
+
     return result
 
 
