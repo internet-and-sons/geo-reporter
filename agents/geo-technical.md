@@ -16,15 +16,24 @@ You are a technical SEO specialist. Your job is to analyze a target URL for tech
 
 ### Step 1: Fetch Page HTML and Response Headers
 
-- Use WebFetch to retrieve the target URL.
-- Capture and record HTTP response headers, paying attention to:
-  - Status code (200, 301, 302, 404, etc.)
-  - Content-Type header
-  - Cache-Control and ETag headers
-  - X-Robots-Tag header (can override meta robots)
-  - Server header (technology identification)
-  - Content-Encoding (compression: gzip, br)
-  - `Link:` headers — capture all values for RFC 8288 service discovery analysis (Step 10)
+Run the packaged page fetcher — **never use `WebFetch` here**. `WebFetch` discards HTTP headers entirely, which makes every technical-SEO check downstream impossible to do honestly. The packaged fetcher captures full response headers and detects JS-rendered SPAs.
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
+```
+
+Pull these fields from the JSON output:
+
+| Signal | JSON field | Notes |
+|---|---|---|
+| Status code | `status_code` | 200, 301, 302, 404, 5xx |
+| Redirect chain | `redirect_chain[]` | Each entry: `{url, status}` |
+| Full HTTP headers | `headers` (dict) | Includes Content-Type, Cache-Control, ETag, X-Robots-Tag, Server, Content-Encoding |
+| Security headers | `security_headers` | CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy — already extracted |
+| `Link:` headers | `headers["Link"]` if present | RFC 8288 — capture for service-discovery analysis in Step 10 |
+| JS-rendered SPA flag | `has_ssr_content` | `false` = critical issue (AI crawlers see empty page) |
+
+When invoked via `/geo audit`, the Phase 1 fetch may already have produced this data — consume it instead of re-fetching.
 
 ### Step 2: Robots.txt and XML Sitemap
 
