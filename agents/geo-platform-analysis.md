@@ -13,6 +13,18 @@ You are a platform optimization specialist. Your job is to analyze a target URL 
 
 ## Execution Steps
 
+### Step 0: Fetch the target page (only if invoked standalone)
+
+When this agent runs as part of `/geo audit`, the orchestrator's Phase 1 already produced a rich JSON for the target URL — consume its `title`, `meta_tags`, `heading_structure`, `text_content`, `structured_data[]`, `headers`, and `has_ssr_content` fields. Do **not** re-fetch.
+
+When invoked standalone (e.g. `/geo platforms <url>`), fetch with the packaged fetcher — not `WebFetch`:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
+```
+
+`WebFetch` would strip `<head>` (so you'd lose JSON-LD entity hints that ChatGPT and Gemini lean on) and silently return empty for JS-rendered SPAs.
+
 ### Step 1: Google AI Overviews (AIO) Readiness
 
 Google AI Overviews pull from indexed content and favor pages that already rank well in traditional search. Analyze the target page for:

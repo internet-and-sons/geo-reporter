@@ -16,18 +16,30 @@ You are a content quality specialist. Your job is to analyze a target URL and ev
 
 ### Step 1: Extract and Analyze Page Content
 
-- Use WebFetch to retrieve the target URL.
-- Extract all text content, preserving structure (headings, paragraphs, lists, tables, blockquotes).
-- Record:
-  - Total word count (body content only, excluding navigation and footer)
-  - Number of headings (H1, H2, H3, etc.) and their text
-  - Number of paragraphs
-  - Number of lists (ordered and unordered)
-  - Number of tables
-  - Number of images (with alt text status)
-  - Number of internal and external links
-  - Presence of author byline
-  - Publication date and last-modified date if visible
+Run the packaged page fetcher — **not `WebFetch`**, which strips `<head>` content, returns markdown, and misses JS-rendered SPAs.
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
+```
+
+Use the structured JSON fields directly — no re-parsing needed:
+
+| What you need | Where it comes from |
+|---|---|
+| Total word count (body only) | `word_count` |
+| Headings (H1-H6) with text | `h1_tags`, `heading_structure` |
+| Body text content | `text_content` (paragraphs, lists, tables already extracted) |
+| Image count + alt-text status | `images` (each entry has `alt` field) |
+| Internal/external link counts | `internal_links`, `external_links` |
+| Meta description + canonical | `description`, `canonical` |
+| Open Graph + Twitter Card tags | `meta_tags` |
+| JSON-LD (Article.author, datePublished) | `structured_data[]` |
+| HTTP response status / headers | `status_code`, `headers`, `security_headers` |
+| JS-rendered SPA warning | `has_ssr_content == false` → flag as critical |
+
+For author byline and publication-date detection: prefer `structured_data[]` (`Article.author`, `Article.datePublished`, `Article.dateModified`) over text-pattern matching. Fall back to scanning `text_content` only if no structured data is present.
+
+When invoked via `/geo audit`, the Phase 1 fetch may already have produced this data — consume it instead of re-fetching.
 
 ### Step 2: Experience Evaluation
 

@@ -16,10 +16,23 @@ You are a GEO (Generative Engine Optimization) specialist. Your job is to analyz
 
 ### Step 1: Fetch and Extract Target Content
 
-- Use WebFetch to retrieve the target URL.
-- Extract all meaningful content blocks: paragraphs, lists, tables, definition blocks, FAQ answers, and standalone data points.
-- Preserve the content hierarchy (headings, subheadings, body text).
-- Note the page title, meta description, and any structured data hints.
+Run the packaged page fetcher — **not `WebFetch`**, which strips `<head>` (so it loses meta tags, JSON-LD, OG/Twitter cards), gives markdown instead of HTML, and silently returns empty pages for JS-rendered SPAs.
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
+```
+
+Use the structured JSON fields directly:
+- `title`, `description`, `canonical` — page metadata
+- `meta_tags` — full meta-tag dictionary including Open Graph and Twitter Card
+- `h1_tags`, `heading_structure` — content hierarchy
+- `word_count`, `text_content` — body text for content block extraction
+- `structured_data[]` — parsed JSON-LD blocks (hints at entity model)
+- `has_ssr_content` — **if `false`, the page is JS-rendered without SSR**; flag as a critical AI-visibility issue and continue with whatever was extractable
+
+When run via `/geo audit`, this fetch may already have been done in Phase 1 — consume the orchestrator's output instead of re-fetching. When run standalone (e.g. `/geo citability <url>`), fetch directly.
+
+Extract meaningful content blocks from `text_content` and the heading structure: paragraphs, lists, tables, definition blocks, FAQ answers, and standalone data points. Preserve hierarchy.
 
 ### Step 2: Citability Analysis
 

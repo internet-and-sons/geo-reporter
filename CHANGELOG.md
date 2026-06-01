@@ -8,6 +8,24 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-06-01
+
+**Theme: page-mode by default.** The audit orchestrator and every Phase-2 subagent were fetching the target URL with `WebFetch`, which converts HTML to markdown, strips `<head>` (losing JSON-LD, OG / Twitter Card, meta tags), discards HTTP headers, and silently returns empty pages for JS-rendered SPAs. The packaged `fetch_page.py <url> page` already returns a rich JSON with all of this — it was just orphaned outside `geo-schema`. This release wires it in everywhere.
+
+### Changed
+
+- **[`skills/geo-audit/SKILL.md`](skills/geo-audit/SKILL.md) Phase 1 Step 1** — switched from `WebFetch` to `fetch_page.py page`. Documents the full JSON schema (`title`, `meta_tags`, `heading_structure`, `structured_data[]`, `headers`, `security_headers`, `has_ssr_content`, …) so downstream subagents can consume by field name.
+- **[`agents/geo-ai-visibility.md`](agents/geo-ai-visibility.md) Step 1** — page-mode fetch. Citability scoring now works against extracted `text_content` and `heading_structure` rather than re-parsing markdown.
+- **[`agents/geo-content.md`](agents/geo-content.md) Step 1** — page-mode fetch. Author byline / publication date detection now prefers `structured_data[]` (`Article.author`, `Article.datePublished`) over text-pattern matching.
+- **[`agents/geo-technical.md`](agents/geo-technical.md) Step 1** — page-mode fetch. **Biggest win here**: technical SEO checks were previously running against zero HTTP headers (because `WebFetch` discards them). Now `status_code`, `headers`, `redirect_chain`, and `security_headers` are all available.
+- **[`agents/geo-platform-analysis.md`](agents/geo-platform-analysis.md)** — added Step 0 documenting that it should consume the orchestrator's Phase 1 fetch when run via `/geo audit`, or fetch with `fetch_page.py page` when standalone.
+
+### Fixed
+
+- **JS-rendered SPAs were silently misread as empty** — `WebFetch` doesn't execute JavaScript, so every subagent saw an empty page and reported "no content", "no schema", "no headings", etc. The packaged fetcher exposes a `has_ssr_content` flag (`false` = JS-rendered without SSR), so subagents now flag this as a critical AI-visibility issue rather than producing a false catastrophic audit.
+- **OG / Twitter Card tags were systematically reported as missing** — they live in `<head>`, which `WebFetch` strips. Now read from `meta_tags`.
+- **Security headers (CSP, HSTS, X-Frame-Options, …) and `Link:` headers were invisible** — `WebFetch` discards response headers. Now read from `headers` / `security_headers`.
+
 ## [0.3.2] — 2026-06-01
 
 **Theme: live probe by default.** A real-world audit (`law.co.il`, fully permissive robots.txt) revealed that `/geo audit` was reporting every AI crawler as "⚠️ Unverified" — because the orchestrator was never invoking the live reachability probe, and the subagent doing AI Crawler Access was hand-rolling robots.txt parsing that mis-handled `User-agent: *` wildcards. Manual `curl -A "GPTBot/1.0" -I` confirmed every bot returned `200 OK`. This release closes the gap.
@@ -125,7 +143,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.3
 [0.3.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.2
 [0.3.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.1
 [0.2.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.2.0

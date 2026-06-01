@@ -28,19 +28,39 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
 
 **Step 1: Fetch Homepage and Detect Business Type**
 
-1. Use WebFetch to retrieve the homepage at the provided URL.
-2. Extract the following signals:
-   - Page title, meta description, H1 heading
-   - Navigation menu items (reveals site structure)
-   - Footer content (reveals business info, location, legal pages)
-   - Schema.org markup on homepage (Organization, LocalBusiness, etc.)
+1. Run the structured page fetcher — **always use this, not `WebFetch`, for the target URL.** `WebFetch` converts HTML to markdown, strips `<head>`, drops JSON-LD, hides HTTP headers, and silently returns empty pages for JS-rendered SPAs. The packaged fetcher avoids all four problems:
+
+   ```bash
+   python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
+   ```
+
+   The output is a single JSON object — use its fields directly rather than re-parsing the body:
+
+   | Field | What's in it |
+   |---|---|
+   | `title`, `description`, `canonical` | page metadata |
+   | `meta_tags` | full meta-tag dictionary (Open Graph, Twitter Card, robots, viewport, etc.) |
+   | `h1_tags`, `heading_structure` | heading hierarchy with text |
+   | `word_count`, `text_content` | body word count and extracted body text |
+   | `internal_links`, `external_links`, `images` | with alt-text status on images |
+   | `structured_data[]` | parsed JSON-LD blocks (Organization, LocalBusiness, Article, etc.) |
+   | `headers`, `security_headers` | full HTTP response headers (CSP, HSTS, X-Frame-Options, etc.) |
+   | `status_code`, `redirect_chain` | response status + redirect history |
+   | `has_ssr_content` | **`false` = JS-rendered SPA with no server-side content**; AI crawlers will see an empty page. Flag as a critical issue if this is the case. |
+
+2. Extract these signals from the JSON (no re-fetch needed):
+   - Page title, meta description, H1 heading (from `title`, `description`, `h1_tags`)
+   - Navigation menu items and footer content (from `text_content` + link structure)
+   - Schema.org markup on homepage (from `structured_data[]` — Organization, LocalBusiness, etc.)
    - Pricing page link (SaaS indicator)
    - Product listing patterns (E-commerce indicator)
    - Blog/resource section (Publisher indicator)
    - Service pages (Agency indicator)
    - Address/phone/Google Maps embed (Local business indicator)
 
-3. Classify the business type using these patterns:
+3. **If `has_ssr_content == false`**, the site is JS-rendered without server-side rendering. This is a critical GEO finding — log it and continue with whatever data was extractable. For deeper JS-rendered analysis, the `geo-botaccess` skill's Playwright fallback can fetch a fully-rendered baseline; reference its output if available.
+
+4. Classify the business type using these patterns:
 
 | Business Type | Detection Signals |
 |---|---|
