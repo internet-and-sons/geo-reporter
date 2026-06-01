@@ -8,6 +8,26 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-06-01
+
+**Theme: live probe by default.** A real-world audit (`law.co.il`, fully permissive robots.txt) revealed that `/geo audit` was reporting every AI crawler as "⚠️ Unverified" — because the orchestrator was never invoking the live reachability probe, and the subagent doing AI Crawler Access was hand-rolling robots.txt parsing that mis-handled `User-agent: *` wildcards. Manual `curl -A "GPTBot/1.0" -I` confirmed every bot returned `200 OK`. This release closes the gap.
+
+### Changed
+
+- **`/geo audit` now invokes the live probe** ([`skills/geo-audit/SKILL.md`](skills/geo-audit/SKILL.md)) — Phase 2's AI Visibility subagent runs `fetch_page.py ... bots` (same engine as the standalone `geo-botaccess` skill) as the primary signal for crawler access. The static robots.txt analysis becomes a secondary "declared policy" signal used only to surface declared-vs-actual mismatches.
+- **`geo-ai-visibility` Step 3 rewritten** ([`agents/geo-ai-visibility.md`](agents/geo-ai-visibility.md)) to (a) run the live probe first, (b) call the packaged `fetch_robots_txt()` parser via `fetch_page.py ... robots` rather than hand-rolling robots.txt parsing, and (c) reconcile the two signals into a table that flags declared-vs-actual mismatches (e.g. permissive robots.txt + Cloudflare 403 = critical WAF override). Output table now shows both Live and Declared columns.
+- **`geo-crawlers` Step 0 added** ([`skills/geo-crawlers/SKILL.md`](skills/geo-crawlers/SKILL.md)) — live probe runs first, declared-policy parse second. Step 1 now mandates delegating to the packaged parser and explicitly documents that `ALLOWED_BY_DEFAULT` (wildcard-permitted) means "Allowed via wildcard", not "Unknown".
+- **`geo-technical` no longer duplicates crawler access analysis** — that's now exclusively Subagent 1's job (avoids divergent verdicts in the final report).
+
+### Fixed
+
+- **False "Unverified" status on fully permissive robots.txt** — the previous skill instructions told Claude to classify any AI bot not explicitly named as "Unknown" / "Not mentioned" even when `User-agent: *` + empty `Disallow:` clearly permits everything. Now the parser's `ALLOWED_BY_DEFAULT` verdict is rendered as "Allowed (via wildcard)".
+- **Missed WAF overrides** — sites with permissive robots.txt but a Cloudflare/WAF rule that 403s AI crawlers would previously pass the audit. The live probe surfaces this as a CRITICAL declared-vs-actual mismatch.
+
+### Added
+
+- **`tests/test_fetch_robots_txt.py`** — 8 tests covering wildcard inheritance (`ALLOWED_BY_DEFAULT`, `BLOCKED_BY_WILDCARD`), named-bot overrides, `NO_ROBOTS_TXT`, `NOT_MENTIONED`, and sitemap extraction. Locks in the parser behavior the skill instructions now depend on. (68/68 tests pass.)
+
 ## [0.3.1] — 2026-05-21
 
 **Theme: plugin distribution.** The repo is now installable as a Claude Code plugin from a marketplace, and the README is rewritten for non-technical Claude Desktop users (Customize → Personal plugins → Create marketplace). The legacy `./install.sh` path is preserved for development and unusual setups.
@@ -105,7 +125,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.2
 [0.3.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.1
 [0.2.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.1.0

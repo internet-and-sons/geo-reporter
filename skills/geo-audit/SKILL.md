@@ -88,7 +88,8 @@ Delegate analysis to 5 specialized subagents. Each subagent operates on the coll
 
 **Subagent 1: AI Visibility Analysis (geo-ai-visibility)**
 - Analyze content blocks for quotability by AI systems (citability scoring)
-- Check AI crawler access via robots.txt and llms.txt presence
+- **Run the live AI crawler reachability probe** (`fetch_page.py <url> bots`, same engine as the standalone `geo-botaccess` skill) to determine what each AI crawler actually receives from the origin — ground truth, robust against WAF rules that override robots.txt. Cross-reference against the declared robots.txt policy to surface declared-vs-actual mismatches as critical issues.
+- Check llms.txt presence and validate format
 - Scan brand presence across YouTube, Reddit, Wikipedia, LinkedIn
 - Score brand authority signals that AI models use for entity recognition
 
@@ -97,10 +98,10 @@ Delegate analysis to 5 specialized subagents. Each subagent operates on the coll
 - Check platform-specific ranking factors and optimization opportunities
 
 **Subagent 3: Technical GEO Infrastructure (geo-technical)**
-- Analyze robots.txt for AI crawler access
 - Verify meta tags, headers, and technical accessibility for AI systems
 - Check page speed, server-side rendering, and Core Web Vitals
 - Assess security headers and mobile optimization
+- (Crawler access is covered by Subagent 1's live probe — do not re-do static robots.txt parsing here.)
 
 **Subagent 4: Content E-E-A-T Quality (geo-content)**
 - Evaluate Experience, Expertise, Authoritativeness, Trustworthiness signals

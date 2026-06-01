@@ -217,16 +217,37 @@ Disallow: /
 
 ## Analysis Procedure
 
-### Step 1: Fetch and Parse robots.txt
+### Step 0: Run the live reachability probe (ground truth)
 
-1. Use WebFetch to retrieve `[domain]/robots.txt`.
-2. Parse all User-agent directives and their associated Allow/Disallow rules.
-3. For each AI crawler in the reference list above:
-   - Check if there is a specific User-agent block for that crawler
-   - Check if there is a wildcard (`User-agent: *`) block that would apply
-   - Determine effective access: **Allowed**, **Blocked**, or **Not Mentioned** (inherits wildcard rules)
-4. Note any `Crawl-delay` directives that may slow AI crawler access.
-5. Check for `Sitemap` directives (AI crawlers use these for discovery).
+**Always run this first.** robots.txt declares *intent*; the live probe measures what actually happens. A site can have a fully permissive robots.txt while a WAF/CDN rule silently 403s every AI crawler.
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> bots
+```
+
+Use the resulting `probes[]` array as the per-bot status in the output table, the `wafs_detected` array to surface any WAF/CDN in front of the site, and the `verdict` field (`OPEN` / `HEALTHY_PUBLISHER` / `PARTIALLY_BLOCKED` / `MOSTLY_BLOCKED` / `BLOCKED`) as the overall posture. See `geo-botaccess` for the full output schema. If the probe fails (network error), fall back to Step 1 alone and note the degradation.
+
+### Step 1: Fetch and parse the declared policy
+
+Use the parser bundled with this repo — **do not hand-roll robots.txt parsing**. The packaged parser correctly handles `User-agent: *` wildcard inheritance, including the common "fully permissive" case (`User-agent: *` + empty `Disallow:`).
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> robots
+```
+
+The `ai_crawler_status` field returns one of these per crawler — interpret each as written, including the wildcard case:
+
+| Status | Meaning |
+|---|---|
+| `ALLOWED` | Bot has its own block, no `Disallow: /` |
+| `BLOCKED` | Bot has its own block with `Disallow: /` |
+| `PARTIALLY_BLOCKED` | Bot has its own block with specific path disallows but not root |
+| `ALLOWED_BY_DEFAULT` | Bot is not named; wildcard `User-agent: *` is present and does not block root. **Permissive — render as "Allowed (via wildcard)" in the table, not "Unknown" or "Unverified".** |
+| `BLOCKED_BY_WILDCARD` | Bot is not named; wildcard has `Disallow: /` |
+| `NOT_MENTIONED` | Neither bot-specific nor wildcard rules present |
+| `NO_ROBOTS_TXT` | 404 — bot is implicitly permitted |
+
+Also note any `Crawl-delay` directives (may slow AI crawler access) and `Sitemap` references (AI crawlers use these for discovery — both surface as `sitemaps[]` in the JSON output).
 
 ### Step 2: Check Meta Robots Tags
 

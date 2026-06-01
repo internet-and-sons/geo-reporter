@@ -43,40 +43,77 @@ Compute the **Page Citability Score** as the average of the top 5 scoring blocks
 
 ### Step 3: AI Crawler Access Check
 
-Fetch `/robots.txt` from the target domain root. Parse it for directives affecting these AI crawlers:
+**This is the highest-leverage technical signal in the audit. Never produce this section from `robots.txt` analysis alone — a permissive robots.txt can coexist with a Cloudflare/WAF rule that silently 403s every AI crawler. The only reliable signal is to actually replay the homepage as each bot and observe what comes back.**
 
-| Crawler | Service |
+#### Step 3a: Run the live AI crawler reachability probe (PRIMARY signal)
+
+Invoke the live probe — same script used by the standalone `geo-botaccess` skill:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> bots
+```
+
+This fetches a baseline (Chrome user-agent + optional Playwright fallback if Cloudflare serves a JS challenge), fingerprints the WAF/CDN in front of the site, then replays the request with every AI crawler in `AI_CRAWLERS`. The output is a single JSON object with:
+
+| Field | Use |
 |---|---|
-| GPTBot | OpenAI (training + ChatGPT search) |
-| OAI-SearchBot | OpenAI (search-only, respects separate rules) |
-| ChatGPT-User | ChatGPT browsing mode |
-| ClaudeBot | Anthropic / Claude |
-| PerplexityBot | Perplexity AI search |
-| Amazonbot | Amazon / Alexa AI |
-| Google-Extended | Google Gemini training (does NOT affect Google Search) |
-| Bytespider | ByteDance / TikTok AI |
-| CCBot | Common Crawl (feeds many AI models) |
-| Applebot-Extended | Apple Intelligence features |
-| FacebookBot | Meta AI features |
-| Cohere-ai | Cohere models |
+| `baseline` | Status code + body size for a Chrome request — the reference point |
+| `js_challenge_detected` | `true` if the baseline tripped a Cloudflare JS challenge |
+| `wafs_detected` | Array of WAF/CDN products fingerprinted from headers (Cloudflare, AWS WAF, Imperva, Akamai, …) |
+| `probes[]` | One entry per bot: `{ua, name, class, operator, status_code, body_size, similarity_to_baseline, verdict}` |
+| `class_scores` | Per-class scores (`live-retrieval`, `search-index`, `traditional-search`, `training`) — 0 to 100 |
+| `verdict` | One of `OPEN`, `HEALTHY_PUBLISHER`, `PARTIALLY_BLOCKED`, `MOSTLY_BLOCKED`, `BLOCKED` |
+| `overall_score` | Weighted: `0.5·live-retrieval + 0.35·traditional + 0.15·training` |
 
-For each crawler, record:
-- **Allowed**: No blocking rules found.
-- **Blocked**: Disallow rules targeting this user-agent.
-- **Restricted**: Specific paths blocked but root accessible.
-- **Unknown**: Not mentioned (inherits default rules).
+Use the probe results — not your own robots.txt interpretation — as the per-bot status in the final table. Per-bot status comes from `probes[].verdict`: `allowed` (2xx + content matches baseline), `blocked` (4xx/5xx or challenge body), or `stripped` (200 OK but body suspiciously small / dissimilar to baseline — silent content-stripping).
 
-Check for:
-- Overly broad blocks (`Disallow: /` for all bots) that also block AI crawlers unintentionally.
-- Crawl-delay directives that may slow AI indexing.
-- Sitemap references that help AI crawlers discover content.
+#### Step 3b: Fetch the declared policy (SECONDARY signal)
 
-Calculate **Crawler Access Score**:
+Run the static analyzer for the same URL — this returns the *declared* robots.txt policy:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> robots
+```
+
+The JSON output's `ai_crawler_status` field returns one of these per crawler:
+
+| Value | Meaning |
+|---|---|
+| `ALLOWED` | Bot has its own user-agent block, no `Disallow: /` |
+| `BLOCKED` | Bot has its own block with `Disallow: /` |
+| `PARTIALLY_BLOCKED` | Bot has its own block with specific path disallows but not root |
+| `ALLOWED_BY_DEFAULT` | Bot is not explicitly mentioned; `User-agent: *` wildcard is present and does NOT have `Disallow: /` — bot is permitted via wildcard. **This is a permissive declaration, not "Unknown".** |
+| `BLOCKED_BY_WILDCARD` | Bot is not explicitly mentioned; wildcard has `Disallow: /` |
+| `NOT_MENTIONED` | Neither bot-specific rules nor wildcard rules present |
+| `NO_ROBOTS_TXT` | No robots.txt file (404) — bot is implicitly permitted |
+
+**Critical: do not re-parse robots.txt yourself.** The script's `fetch_robots_txt()` already handles `User-agent: *` wildcard inheritance correctly. Hand-rolled parsing in the past has produced false "Unverified" status on fully permissive sites (e.g. `User-agent: *` + empty `Disallow:` was mis-classified as "Unknown" when it actually means "Allowed via wildcard").
+
+#### Step 3c: Reconcile and render the final table
+
+For each AI crawler, render a row built from BOTH signals — and explicitly flag mismatches:
+
+| Live probe | Declared (robots.txt) | Render as | Severity |
+|---|---|---|---|
+| ✅ Allowed (200, content matches) | Allowed / Allowed by default / No robots.txt | **✅ Allowed (live confirmed)** | OK |
+| ❌ Blocked (403/429/challenge) | Allowed / Allowed by default | **❌ Blocked by WAF (declared open)** — declared-vs-actual mismatch | **CRITICAL** — robots.txt invites the bot but a Cloudflare/WAF rule is silently rejecting it |
+| ❌ Blocked | Blocked | **❌ Blocked (intentional)** | OK if training-class bot and posture is HEALTHY_PUBLISHER; otherwise High |
+| ⚠️ Stripped (200, body dissimilar) | Allowed | **⚠️ Content stripped** — bot reaches the page but receives a different body than Chrome does | High |
+| ❌ Blocked | `NOT_MENTIONED` | **❌ Blocked (no declared rule)** | High — WAF override with no robots.txt context |
+
+Show the WAF fingerprint (`wafs_detected`) and the probe verdict (`verdict`) above the table. If `verdict == HEALTHY_PUBLISHER` (training-class bots blocked, retrieval-class allowed — the NYT/WSJ/Reuters/BBC posture), say so explicitly and do not flag the training blocks as issues.
+
+#### Crawler Access Score
+
+Use the probe's `overall_score` directly — it already weights `0.5·live-retrieval + 0.35·traditional + 0.15·training`, which matches the GEO impact ranking. Do not re-derive a score from static robots.txt analysis; the live probe is ground truth.
+
+If the live probe failed to run (network error, script not available), fall back to the declared-policy score:
 - Start at 100.
-- Deduct 15 points for each critical crawler blocked (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, GoogleBot).
-- Deduct 5 points for each secondary crawler blocked.
+- Deduct 15 points per critical bot (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot) reported as `BLOCKED` or `BLOCKED_BY_WILDCARD`.
+- Deduct 5 points per secondary bot blocked.
 - Deduct 10 points if no sitemap is referenced.
 - Floor at 0.
+- Annotate the score as `(declared-only; live probe unavailable)` so consumers know it's a degraded signal.
 
 **Content Signals (non-scoring):** Using the already-fetched robots.txt, scan for a `Content-Signal:` directive (IETF draft `draft-romm-aipref-contentsignals`). If found, parse key=value pairs and record the declared preferences. Valid keys: `ai-train`, `search`, `ai-personalization`, `ai-retrieval`, `ai-input` (the last is used in production by cloudflare.com alongside the IETF draft's keys; keep both until the spec settles). Valid values: `yes`, `no`. If absent, note as a recommendation. This check does not affect the Crawler Access Score — it is a non-scored flag.
 
@@ -197,17 +234,20 @@ Citation-unlikely areas needing improvement:
 
 ### AI Crawler Access
 
-| Crawler | Status | Notes |
-|---|---|---|
-| GPTBot | [Allowed/Blocked/Restricted] | [Details] |
-| OAI-SearchBot | [Status] | [Details] |
-| ChatGPT-User | [Status] | [Details] |
-| ClaudeBot | [Status] | [Details] |
-| PerplexityBot | [Status] | [Details] |
-| [Other crawlers...] | | |
+**WAF/CDN detected:** [Cloudflare / AWS WAF / Imperva / Akamai / none]
+**Overall posture:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED] (live probe verdict)
+
+| Crawler | Live status | Declared (robots.txt) | Render | Notes |
+|---|---|---|---|---|
+| GPTBot | [200 / 403 / etc.] | [ALLOWED / ALLOWED_BY_DEFAULT / BLOCKED / NO_ROBOTS_TXT / etc.] | ✅ Allowed (live confirmed) / ❌ Blocked by WAF (declared open) / ❌ Blocked (intentional) / ⚠️ Content stripped | [Details] |
+| OAI-SearchBot | [...] | [...] | [...] | [Details] |
+| ChatGPT-User | [...] | [...] | [...] | [Details] |
+| ClaudeBot | [...] | [...] | [...] | [Details] |
+| PerplexityBot | [...] | [...] | [...] | [Details] |
+| [Other crawlers...] | | | | |
 
 **Issues Found:**
-- [Issue 1]
+- [Issue 1 — e.g. "GPTBot returned 403 from origin despite permissive robots.txt — Cloudflare bot management rule is overriding declared policy"]
 - [Issue 2]
 
 **Content Signals:** [Present — list parsed key=value pairs with plain-English meaning] / [Absent — Recommendation: add `Content-Signal:` directive to robots.txt. See https://contentsignals.org/]
