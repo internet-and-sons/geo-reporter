@@ -8,6 +8,12 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+### Added
+
+- **Bilingual (English + Hebrew) citability scoring** in [`scripts/citability_scorer.py`](scripts/citability_scorer.py). Each passage is language-detected by Hebrew-character density; Hebrew passages are scored with a Hebrew-tuned engine (gazetteer-based named-entity detection for titles/acronyms/quoted names, Hebrew definition/source/transition/uniqueness pattern packs, `₪`/`ש"ח` currency and `אחוז` percentage detection, niqqud stripping, and a recalibrated 90–120 word optimal-length band). All non-Hebrew content keeps using the original English engine unchanged. Same public functions, five dimensions, weights, and A–F grade bands, so cross-language scores stay comparable.
+- **`language` field on `score_passage()` output** and **`language_distribution` on `analyze_page_citability()` output**.
+- **`tests/test_citability_scorer.py`** — 20 tests covering language detection, Hebrew normalisation, English-engine behaviour (unchanged), Hebrew named-entity/source/definition/currency/percentage/uniqueness signals, the recalibrated length band, and page-level `language_distribution`.
+
 ## [0.3.5] — 2026-06-01
 
 **Theme: the last three orphans.** Three more packaged scripts that the audit had been hand-doing in markdown for: llms.txt validation, brand mention scanning, and sitemap crawling. All now wired into the orchestrator and the AI Visibility subagent. Closes the orphaned-deep-check audit started in v0.3.2.
