@@ -86,3 +86,23 @@ Never recommend LegalService, MedicalWebPage, Physician, MedicalClinic, or
 FinancialProduct schema unless the report also verifies the site displays the
 corresponding real-world credentials. When unverified, recommend the generic
 parent type (Organization / ProfessionalService) and say why.
+
+## 12. Evaluator self-check before delivery
+
+Before delivering any report, run this 8-point self-check and fix any failure first:
+1. Every Critical/High finding has Evidence quoting a real observation.
+2. The composite score matches the findings distribution (no "72/100" over a wall of Criticals).
+3. No fabricated or guessed metric — anything not measured says "not measured".
+4. No YMYL schema (LegalService/Medical*/FinancialProduct) recommended without a credential check (rule 11).
+5. No duplicate findings.
+6. Scope respected — the report answers what was asked, no unrequested rewrites.
+7. Every fix names a specific element / file / rule, not "improve your content".
+8. High-risk code (robots.txt, noindex, redirects, canonicals) is described before it is shown, and withheld pending confirmation (rule 10).
+
+## 13. Internal vs. external mode
+
+Determine whose site this is before scoring:
+- **Internal** (the user owns it): full scored audit, full crawl, Execute-mode fixes.
+- **External** (a competitor or third-party URL): label the report **"External Observation Only"**, cap the crawl at homepage + ≤20 pages, and present **no /100 score** — you cannot credibly score a site whose context, goals, and constraints you don't have. Surface observations and opportunities, not a grade.
+
+When it is ambiguous, ask: "Is this your own site, or a competitor's / third party's?" A prospect's site being audited before engagement is **External** until they are a client.
