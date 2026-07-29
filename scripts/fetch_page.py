@@ -438,6 +438,8 @@ def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict
         "freshness": {},
         "has_ssr_content": True,
         "security_headers": {},
+        "fetch_method": "default",
+        "challenge_detected": False,
         "errors": [],
     }
 
@@ -456,6 +458,38 @@ def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict
             timeout=timeout,
             allow_redirects=True,
         )
+
+        # WAF/CDN challenge fallback. Cloudflare and friends serve an
+        # interstitial to generic scripted user-agents — sometimes with a
+        # 200 status — and parsing that block page as if it were the site
+        # would silently corrupt every downstream analysis. Retry ONCE with
+        # the GPTBot user-agent, which sites that challenge scripted
+        # browsers commonly allowlist. One retry only: no retry storms, and
+        # nothing happens at all unless the body actually looks like a
+        # challenge (an ordinary 403/404/500 is left alone).
+        if is_challenge_page(response.text, response.status_code):
+            result["challenge_detected"] = True
+            bot_headers = dict(request_headers)
+            bot_headers["User-Agent"] = AI_CRAWLERS["GPTBot"]["ua"]
+            bot_response = requests.get(
+                url,
+                headers=bot_headers,
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            if not is_challenge_page(bot_response.text, bot_response.status_code):
+                # The bot UA got through — everything downstream parses the
+                # retry response instead of the challenge page.
+                response = bot_response
+                result["fetch_method"] = "bot_ua_fallback"
+            else:
+                # Challenged both ways. Keep the original response for a
+                # best-effort parse and flag the result as unreliable.
+                result["errors"].append(
+                    "Page returned a WAF/CDN challenge to both a browser "
+                    "user-agent and a bot user-agent; content analysis may "
+                    "be unreliable."
+                )
 
         # Track redirects
         if response.history:
