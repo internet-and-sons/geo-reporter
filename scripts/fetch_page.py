@@ -336,9 +336,10 @@ def extract_freshness(structured_data, soup, headers) -> dict:
     can't verify recency without a machine-readable date.
 
     Tiers: fresh <90d, aging 90-365d, stale 365-730d, very-stale >730d,
-    future-dated when the date is ahead of now, unknown when no date is
+    future-dated more than a day ahead of now, unknown when no date is
     discoverable. 'future-dated' is a markup defect, not fresh content —
-    age_days stays negative as evidence rather than being clamped.
+    age_days stays negative as evidence rather than being clamped. Dates
+    up to a day ahead stay 'fresh'; see the tolerance note below.
     """
     result = {
         "date_published": None,
@@ -395,7 +396,12 @@ def extract_freshness(structured_data, soup, headers) -> dict:
         result["best_date"] = str(raw)
         result["age_days"] = age
         result["source"] = source
-        if age < 0:
+        # -1 tolerance, not 0: naive (offset-less) markup from a site ahead of
+        # UTC parses as "future" here, since we stamp naive datetimes as UTC.
+        # Worst legitimate case is UTC+14, which floors to age_days == -1, so
+        # anything below that is a genuine defect (template-variable bugs,
+        # dates months or years out) rather than timezone skew.
+        if age < -1:
             result["tier"] = "future-dated"
         else:
             result["tier"] = next(

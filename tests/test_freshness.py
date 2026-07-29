@@ -3,8 +3,9 @@
 ~Half of AI-cited pages were published/updated within the prior 13 weeks
 (Ahrefs 2026). fetch_page now extracts dates and assigns a tier:
   fresh < 90d, aging 90-365d, stale 365-730d, very-stale > 730d,
-  future-dated when the date is ahead of now, unknown when no date is
-  discoverable.
+  future-dated more than a day ahead of now (a markup defect), unknown
+  when no date is discoverable. Dates up to a day ahead stay fresh, to
+  absorb naive-timezone markup from sites ahead of UTC.
 Tests generate dates relative to now so they never go stale.
 """
 
@@ -62,6 +63,14 @@ def test_future_dated_content_flagged_as_markup_defect():
     sd = [{"@type": "Article", "datePublished": _days_ago(-365)}]
     result = extract_freshness(sd, None, {})
     assert result["tier"] == "future-dated"
+    assert result["age_days"] < 0
+
+
+def test_slightly_future_date_tolerated_as_fresh():
+    """Naive-timezone skew (site ahead of UTC) must not read as a markup defect."""
+    sd = [{"@type": "Article", "datePublished": _days_ago(-1)}]
+    result = extract_freshness(sd, None, {})
+    assert result["tier"] == "fresh"
     assert result["age_days"] < 0
 
 
