@@ -56,6 +56,8 @@ The probe is implemented as the `bots` mode of `scripts/fetch_page.py`. It does 
    - status is 403, 406, 429, or 503
    - body matches Cloudflare challenge markers (the "200 OK with a disguised block page" case)
    - body is non-trivially smaller AND content similarity to baseline is suspiciously low (silent content stripping)
+
+   **HTTP 402 is NOT a block** — it is pay-per-crawl (the site monetizes AI access); it is classified separately as payment-required and rendered 💰 per the report contract legend.
 5. **Per-class scoring** — each class scores 0–100 independently based on the share of blocked bots in that class. The overall score weights retrieval (live + search) at 0.5, traditional search at 0.35, and training at 0.15. A JS-challenge-with-no-Playwright penalty (–30) is applied to the retrieval and search classes only, since non-browser bots can't bypass interstitials.
 
 ## Workflow
@@ -81,11 +83,16 @@ The output is a single JSON object with this shape:
   "probes": [
     {"bot": "GPTBot", "class": "training", "operator": "OpenAI",
      "status": 200, "length": 513540, "similarity": 0.85,
-     "blocked": false, "block_reason": null},
+     "blocked": false, "payment_required": false, "block_reason": null},
     {"bot": "OAI-SearchBot", "class": "search-index", "operator": "OpenAI",
      "status": 403, "length": 673, "similarity": null,
-     "blocked": true, "block_reason": "http_403"}
+     "blocked": true, "payment_required": false, "block_reason": "http_403"},
+    {"bot": "ClaudeBot", "class": "training", "operator": "Anthropic",
+     "status": 402, "length": 512, "similarity": null,
+     "blocked": false, "payment_required": true,
+     "block_reason": "payment-required (HTTP 402 — pay-per-crawl)"}
   ],
+  "payment_required_bots": ["ClaudeBot"],
   "class_scores": {
     "live-retrieval":     {"total": 7, "blocked": 0, "score": 100},
     "search-index":       {"total": 5, "blocked": 5, "score": 0},
@@ -106,6 +113,13 @@ The output is a single JSON object with this shape:
 ```
 
 Parse this JSON in Bash with `python -c` or `jq`. Don't re-fetch the URL — the JSON is the source of truth. The `class` and `operator` fields on each probe are the primary axis for grouping the report.
+
+Two fields carry the pay-per-crawl signal:
+
+| Field | Meaning |
+|---|---|
+| `probes[].payment_required` | `true` when that bot received HTTP 402. `blocked` stays `false` — a toll is not a block, so class scores are unaffected |
+| `payment_required_bots` | Top-level list of bot names that hit a 402 toll. Non-empty means the site monetizes AI access; render 💰 per the report contract legend |
 
 ### Step 2 — Cross-reference declared policy
 
@@ -143,6 +157,8 @@ Verdict mapping (from `class_scores.live-retrieval`, `search-index`, `traditiona
 **`HEALTHY_PUBLISHER` is the canonical NYT/WSJ/Reuters/BBC posture and is a *good* result for GEO.** Do not recommend unblocking training bots when this verdict fires — it's intentional and well-supported by 2025 publisher-log analyses (Botify, Cloudflare, TollBit). Mention the posture is healthy and move on to any actual mismatches.
 
 The `overall_score` field is a single number for tracking iteration-over-iteration progress. Use the verdict as the qualitative headline; use the score for diff comparisons.
+
+**Payment-posture surfacing rule (mandatory).** When `payment_required_bots` is non-empty, the summary/verdict line MUST state the payment posture explicitly (e.g. `verdict: OPEN — but N bots are tolled (pay-per-crawl)`). Class scores count tolled bots as reachable, so without this line a fully-tolled site would read as perfectly healthy.
 
 ### Step 4 — Generate recommendations
 
@@ -203,7 +219,7 @@ Recommendations should be concrete and product-specific. Use the WAF fingerprint
 
 Present the findings as:
 
-1. A one-line headline: `Verdict: <VERDICT> — overall <X>/100`
+1. A one-line headline: `Verdict: <VERDICT> — overall <X>/100`, with the payment posture appended whenever `payment_required_bots` is non-empty (`— but <N> bots are tolled (pay-per-crawl)`)
 2. The WAF/CDN line (e.g. `Behind: Cloudflare (cf-ray header)`)
 3. **Per-class score line:** `Live-retrieval 100 · Search-index 0 · Traditional-search 100 · Training 0` — one row, four numbers, so the user sees at a glance which class is in trouble.
 4. **Four bot tables, one per class**, in this order: Live-retrieval, Search-index, Traditional-search, Training. Within each table, rows have `bot · operator · status · ✓/✗`. Collapse the Training table to a one-liner (`Training: 7/7 blocked — see "training-blocked is healthy" note above`) when the verdict is `HEALTHY_PUBLISHER`, since the detail isn't actionable.
@@ -231,6 +247,7 @@ Also render the probe's `excluded_tokens` map: retired tokens and opt-out tokens
 - **Google-Extended and Applebot-Extended are signals, not crawlers.** Google and Apple don't actually issue HTTP requests with these user-agents — they're robots.txt tokens that signal "don't use this content for training." The probe therefore does **not** test them — they appear in `excluded_tokens` with reason `opt-out-token` and must be rendered as `— Not tested (opt-out token)` rows. They still belong in robots.txt recommendations.
 - **`anthropic-ai` and `claude-web` are retired.** Anthropic's current fleet is ClaudeBot, Claude-User, Claude-SearchBot. `FacebookBot` is likewise retired in favour of `Meta-ExternalAgent`. The probe does not test retired tokens; they appear in `excluded_tokens` with reason `retired`. If a site's robots.txt still carries rules for them, report it as an informational cleanup item, not an access finding.
 - **`Google-Agent` generally ignores robots.txt.** It is a user-triggered agent fetcher, so its declared robots.txt status is close to meaningless — this live probe is the only signal that matters for it, and WAF-level rules are the only real lever.
+- **Cloudflare default-block era (from Sept 15, 2026):** new ad-supported Cloudflare domains block AI training bots by default. When a site shows unexpected training-bot blocks and the WAF fingerprint says Cloudflare, ask when the site joined Cloudflare — the owner may not know they are blocking. This turns a "misconfiguration" finding into an "unreviewed default" finding, which changes the recommended fix (review the setting, don't just disable it).
 - **Bot-class definitions can drift.** Lab fleets are policy-defined and can shift without announcement (OpenAI revised ChatGPT-User policy mid-2025 without notice). Re-audit lab documentation every ~90 days for the high-stakes classes (live-retrieval, search-index). The four-class structure here matches OpenAI/Anthropic/Perplexity as of 2026 — verify before relying on it.
 
 ## Re-running for iteration

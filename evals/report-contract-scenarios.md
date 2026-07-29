@@ -17,13 +17,14 @@ Command: `/geo crawlers <fully-permissive site>`
 - [ ] Opt-out tokens (Google-Extended, Applebot-Extended) render as "— Not tested (opt-out token …)", not as blocked/allowed
 - [ ] A permissive wildcard robots.txt renders as Allowed-family status, never "Unknown"
 - [ ] Retired tokens present in the site's robots.txt surface as an informational cleanup item (stale_tokens)
+- [ ] If any bot received HTTP 402, it renders as "💰 Payment required", never as blocked or as a mismatch
 
 ## Scenario 2 — TL;DR standalone test
 
 Command: `/geo audit <any site>`
 - [ ] Report opens with TL;DR ≤150 words containing: score, exactly 3 actions, each with impact + effort + owner
 - [ ] Reading ONLY the TL;DR, a non-technical person can say what to do this week
-- [ ] No table longer than 6 rows appears before the appendix
+- [ ] No table longer than 6 rows appears before the appendix (template-mandated tables — e.g. the 7-row Score Breakdown — are exempt)
 
 ## Scenario 3 — Bilingual site
 

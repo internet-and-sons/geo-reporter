@@ -8,6 +8,22 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-29
+
+**Theme: agent readiness & licensing.** Detects the 2026 agent/licensing protocol surface as non-scoring signals, and classifies pay-per-crawl correctly (an HTTP 402 previously read as *allowed* in the live probe).
+
+### Added
+
+- **`geo-agentready` skill + `agentready` fetch mode** — probes 10 well-known endpoints (MCP server card SEP-1649, agents.json, RFC 9727 api-catalog, OAuth discovery RFC 8414/9728, Web Bot Auth signature directory, NLWeb `/ask`+`/mcp`, RSL `rsl.txt`/`rsl.xml`) plus homepage `Content-Usage`/`Content-Signal`/`Link` headers. All non-scoring; SPA soft-404 guard; NLWeb 405-means-exists semantics with a hedge rule against generic-path false positives. Routed as `/geo agentready`.
+- **Licensing directives from robots.txt** — `fetch_robots_txt` now extracts `License:` (RSL 1.0), `Content-Usage:` (IETF AIPREF draft), and `Content-Signal:` (Cloudflare) into a `licensing` field.
+- **💰 Payment-required legend entry** in the report contract, rendered in geo-botaccess and geo-ai-visibility — including a mandatory payment-posture line in verdicts whenever any bot is tolled (class scores count tolled bots as reachable, so the posture must be stated explicitly).
+- **Cloudflare Sept-15-2026 default-block guidance** in geo-botaccess — unexpected training-bot blocks on recent Cloudflare sites are likely unreviewed defaults, not misconfigurations.
+
+### Fixed
+
+- **HTTP 402 mis-classified as allowed** — the live probe's blocked check (403/406/429/503) let 402 fall through as a healthy response. Pay-per-crawl is now classified distinctly (`payment_required` per probe + `payment_required_bots` summary), neither blocked (no false CRITICAL mismatch) nor allowed (no hidden toll).
+- Eval scenario wording: template-mandated tables exempt from the 6-row appendix rule; new 402-rendering assertion in Scenario 1.
+
 ## [0.4.0] — 2026-07-29
 
 **Theme: truth refresh + report experience.** Corrects every factually-stale claim identified in the July 2026 gap analysis and introduces a mandatory report contract so audit output is readable and actionable for non-technical users.
@@ -208,7 +224,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.0
 [0.3.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.5
 [0.3.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.4

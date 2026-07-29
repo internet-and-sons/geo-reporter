@@ -606,6 +606,7 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
         "ai_crawler_status": {},
         "stale_tokens": [],
         "sitemaps": [],
+        "licensing": {"license_urls": [], "content_usage": [], "content_signal": []},
         "errors": [],
     }
 
@@ -643,6 +644,22 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
                     if not sitemap_url.startswith("http"):
                         sitemap_url = "http" + sitemap_url
                     result["sitemaps"].append(sitemap_url)
+                # Machine-readable AI-licensing directives (non-scoring —
+                # pure extraction; the skill layer renders presence as info).
+                # `split(":", 1)` keeps everything after the FIRST colon, so
+                # URLs with their own colons survive intact.
+                elif line.lower().startswith("license:"):
+                    result["licensing"]["license_urls"].append(
+                        line.split(":", 1)[1].strip()
+                    )
+                elif line.lower().startswith("content-usage:"):
+                    result["licensing"]["content_usage"].append(
+                        line.split(":", 1)[1].strip()
+                    )
+                elif line.lower().startswith("content-signal:"):
+                    result["licensing"]["content_signal"].append(
+                        line.split(":", 1)[1].strip()
+                    )
 
             # Determine status for each AI crawler
             for crawler in ai_crawlers:
@@ -920,6 +937,8 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
               disguised block page)
             - body is non-trivially smaller AND content similarity to
               baseline is suspiciously low (silent content stripping)
+         - status 402 is classified separately as payment-required
+           (pay-per-crawl), neither blocked nor allowed
 
     Returns a dict structured for JSON consumption by skills. All
     failures are captured in result["errors"] rather than raised — this
@@ -944,6 +963,8 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
             for name, info in AI_CRAWLERS.items()
             if info.get("status", "active") != "active"
         },
+        # Bots that met an HTTP 402 pay-per-crawl toll rather than a block.
+        "payment_required_bots": [],
     }
 
     # Reject non-http(s) schemes before any network call. Mirrors the
@@ -1011,6 +1032,7 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
             "length": None,
             "similarity": None,
             "blocked": False,
+            "payment_required": False,
             "block_reason": None,
         }
         try:
@@ -1033,7 +1055,15 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         # Block detection rules in priority order. We record the first
         # rule that matches so the downstream skill can give a precise
         # explanation in its recommendations.
-        if bot_resp.status_code in (403, 406, 429, 503):
+        if bot_resp.status_code == 402:
+            # Pay-per-crawl (e.g. Cloudflare's 402 flow): the site is
+            # monetizing AI access, not blocking it. Classify distinctly —
+            # calling this "blocked" would produce a false CRITICAL
+            # mismatch finding; calling it "allowed" would hide the toll.
+            probe["payment_required"] = True
+            probe["block_reason"] = "payment-required (HTTP 402 — pay-per-crawl)"
+            result["payment_required_bots"].append(bot_name)
+        elif bot_resp.status_code in (403, 406, 429, 503):
             probe["blocked"] = True
             probe["block_reason"] = f"http_{bot_resp.status_code}"
         elif is_challenge_page(bot_html, bot_resp.status_code):
@@ -1171,11 +1201,89 @@ def crawl_sitemap(url: str, max_pages: int = 50, timeout: int = 15) -> list:
     return list(discovered_pages)[:max_pages]
 
 
+AGENT_READINESS_ENDPOINTS = {
+    # name: (path, spec, expects) — expects: "json", "text", or "endpoint"
+    "api_catalog": ("/.well-known/api-catalog", "RFC 9727", "json"),
+    "oauth_authorization_server": ("/.well-known/oauth-authorization-server", "RFC 8414", "json"),
+    "oauth_protected_resource": ("/.well-known/oauth-protected-resource", "RFC 9728", "json"),
+    "mcp_server_card": ("/.well-known/mcp/server-card.json", "MCP SEP-1649", "json"),
+    "agents_json": ("/.well-known/agents.json", "agents.json (pre-standard)", "json"),
+    "web_bot_auth_directory": ("/.well-known/http-message-signatures-directory", "Web Bot Auth (IETF draft)", "json"),
+    "rsl_txt": ("/rsl.txt", "RSL 1.0", "text"),
+    "rsl_xml": ("/rsl.xml", "RSL 1.0", "text"),
+    "nlweb_ask": ("/ask", "NLWeb", "endpoint"),
+    "nlweb_mcp": ("/mcp", "NLWeb / MCP", "endpoint"),
+}
+
+
+def check_agent_readiness(url: str, timeout: int = 10) -> dict:
+    """Probe the emerging agent/licensing protocol surface (non-scoring).
+
+    Every check here targets an emerging spec (2025-2026). Absence is the
+    norm and must never be penalized — the report layer surfaces presence
+    as a forward-looking signal only.
+
+    found semantics per expects-type:
+      json/text — HTTP 200 AND body does not look like an HTML page
+                  (SPAs serve index.html for unknown paths: soft-404 guard)
+      endpoint  — any response except 404 (NLWeb's /ask and /mcp are POST
+                  endpoints; GET commonly returns 405, which still proves
+                  the route exists)
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return {"url": url, "checks": {}, "homepage_headers": {},
+                "summary": {"found_count": 0, "checked_count": 0},
+                "errors": [f"Unsupported URL scheme: {parsed.scheme!r}"]}
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    result = {
+        "url": base,
+        "checks": {},
+        "homepage_headers": {"content_usage": None, "content_signal": None, "link": None},
+        "summary": {"found_count": 0, "checked_count": len(AGENT_READINESS_ENDPOINTS)},
+        "errors": [],
+    }
+
+    def _looks_like_html(text):
+        head = (text or "")[:256].lstrip().lower()
+        return head.startswith("<!doctype html") or head.startswith("<html")
+
+    for name, (path, spec, expects) in AGENT_READINESS_ENDPOINTS.items():
+        check = {"path": path, "spec": spec, "status": None, "found": False}
+        try:
+            resp = requests.get(base + path, headers=DEFAULT_HEADERS,
+                                timeout=timeout, allow_redirects=True)
+            check["status"] = resp.status_code
+            if expects == "endpoint":
+                check["found"] = resp.status_code != 404
+            else:
+                check["found"] = resp.status_code == 200 and not _looks_like_html(resp.text)
+        except Exception as e:
+            result["errors"].append(f"{name}: {e}")
+        result["checks"][name] = check
+
+    try:
+        home = requests.get(base, headers=DEFAULT_HEADERS, timeout=timeout,
+                            allow_redirects=True)
+        result["homepage_headers"]["content_usage"] = home.headers.get("Content-Usage")
+        result["homepage_headers"]["content_signal"] = home.headers.get("Content-Signal")
+        result["homepage_headers"]["link"] = home.headers.get("Link")
+    except Exception as e:
+        result["errors"].append(f"homepage headers: {e}")
+
+    result["summary"]["found_count"] = sum(
+        1 for c in result["checks"].values() if c["found"]
+    )
+    return result
+
+
 if __name__ == "__main__":
 
     def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
-        print("Modes: page (default), robots, llms, sitemap, blocks, bots, full")
+        print("Modes: page (default), robots, llms, sitemap, blocks, bots, "
+              "agentready, full")
         sys.exit(1)
 
     if len(sys.argv) < 2:
@@ -1212,6 +1320,9 @@ if __name__ == "__main__":
         # Live AI crawler reachability probe — empirical complement to
         # the static `robots` mode. See probe_ai_crawlers() for details.
         data = probe_ai_crawlers(target_url)
+    elif mode == "agentready":
+        # Non-scoring probe of the emerging agent/licensing protocol surface.
+        data = check_agent_readiness(target_url)
     elif mode == "full":
         data = {
             "page": fetch_page(target_url, accept_language=accept_language),
