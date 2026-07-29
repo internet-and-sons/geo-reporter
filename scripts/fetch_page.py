@@ -7,7 +7,9 @@ Extracts HTML, text content, meta tags, headers, and structured data.
 import sys
 import json
 import re
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
 try:
@@ -321,6 +323,81 @@ DEFAULT_HEADERS = {
 }
 
 
+FRESHNESS_TIERS = ((90, "fresh"), (365, "aging"), (730, "stale"))
+
+
+def extract_freshness(structured_data, soup, headers) -> dict:
+    """Best-effort content dates + freshness tier.
+
+    Priority: JSON-LD dateModified > JSON-LD datePublished >
+    <time datetime> > Last-Modified header. Freshness is a measured
+    AI-citation signal (~50% of cited pages <13 weeks old, Ahrefs 2026);
+    'unknown' means undated content — itself a finding, since AI engines
+    can't verify recency without a machine-readable date.
+    """
+    result = {
+        "date_published": None,
+        "date_modified": None,
+        "last_modified_header": (headers or {}).get("Last-Modified"),
+        "best_date": None,
+        "age_days": None,
+        "tier": "unknown",
+        "source": None,
+    }
+
+    def _walk(nodes):
+        for node in nodes or []:
+            if isinstance(node, dict):
+                yield node
+                for v in node.values():
+                    if isinstance(v, dict):
+                        yield from _walk([v])
+                    elif isinstance(v, list):
+                        yield from _walk(v)
+
+    for node in _walk(structured_data):
+        if not result["date_published"] and node.get("datePublished"):
+            result["date_published"] = str(node["datePublished"])
+        if not result["date_modified"] and node.get("dateModified"):
+            result["date_modified"] = str(node["dateModified"])
+
+    candidates = [
+        (result["date_modified"], "structured_data"),
+        (result["date_published"], "structured_data"),
+    ]
+    if soup is not None:
+        t = soup.find("time", attrs={"datetime": True})
+        if t:
+            candidates.append((t["datetime"], "time_tag"))
+    candidates.append((result["last_modified_header"], "http_header"))
+
+    for raw, source in candidates:
+        if not raw:
+            continue
+        parsed = None
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(str(raw))
+            except (TypeError, ValueError):
+                continue
+        if parsed is None:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - parsed).days
+        result["best_date"] = str(raw)
+        result["age_days"] = age
+        result["source"] = source
+        result["tier"] = next(
+            (tier for limit, tier in FRESHNESS_TIERS if age < limit), "very-stale"
+        )
+        break
+
+    return result
+
+
 def fetch_page(url: str, timeout: int = 30) -> dict:
     """Fetch a page and return structured analysis data."""
     result = {
@@ -340,6 +417,7 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         "external_links": [],
         "images": [],
         "structured_data": [],
+        "freshness": {},
         "has_ssr_content": True,
         "security_headers": {},
         "errors": [],
@@ -414,6 +492,10 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
                 result["structured_data"].append(data)
             except (json.JSONDecodeError, TypeError):
                 result["errors"].append("Invalid JSON-LD detected")
+
+        result["freshness"] = extract_freshness(
+            result["structured_data"], soup, result["headers"]
+        )
 
         # SSR check — must run BEFORE decompose() mutates the tree
         js_app_roots = soup.find_all(
