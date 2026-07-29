@@ -1172,10 +1172,14 @@ def crawl_sitemap(url: str, max_pages: int = 50, timeout: int = 15) -> list:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+
+    def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, full")
         sys.exit(1)
+
+    if len(sys.argv) < 2:
+        _print_usage_and_exit()
 
     accept_language = None
     if "--accept-language" in sys.argv:
@@ -1183,6 +1187,11 @@ if __name__ == "__main__":
         if idx + 1 < len(sys.argv):
             accept_language = sys.argv[idx + 1]
             del sys.argv[idx:idx + 2]
+
+    # Re-validate: stripping the flag may have consumed the only args present
+    # (e.g. `fetch_page.py --accept-language he` with no URL).
+    if len(sys.argv) < 2:
+        _print_usage_and_exit()
 
     target_url = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else "page"
@@ -1205,7 +1214,7 @@ if __name__ == "__main__":
         data = probe_ai_crawlers(target_url)
     elif mode == "full":
         data = {
-            "page": fetch_page(target_url),
+            "page": fetch_page(target_url, accept_language=accept_language),
             "robots": fetch_robots_txt(target_url),
             "llms": fetch_llms_txt(target_url),
             "sitemap": crawl_sitemap(target_url),

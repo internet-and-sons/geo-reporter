@@ -30,3 +30,14 @@ def test_fetch_page_default_language_unchanged():
         fetch_page("https://example.com")
     sent_headers = mock_get.call_args.kwargs["headers"]
     assert sent_headers["Accept-Language"].startswith("en")
+
+
+def test_cli_flag_without_url_prints_usage(tmp_path):
+    """fetch_page.py --accept-language he (no URL) exits with usage, not a traceback."""
+    import subprocess
+    proc = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(__file__), "..", "scripts", "fetch_page.py"), "--accept-language", "he"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 1
+    assert "Usage:" in proc.stdout
