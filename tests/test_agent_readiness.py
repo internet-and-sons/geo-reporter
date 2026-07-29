@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from fetch_page import (  # noqa: E402
     active_crawlers,
     check_agent_readiness,
+    fetch_robots_txt,
     probe_ai_crawlers,
 )
 
@@ -159,3 +160,25 @@ class TestAgentReadiness:
             result = check_agent_readiness("https://example.com")
         assert result["summary"]["found_count"] == 0
         assert result["errors"]
+
+
+class TestLicensingDirectives:
+    def _fetch(self, robots_text):
+        with patch("fetch_page.requests.get", return_value=_resp(200, text=robots_text)):
+            return fetch_robots_txt("https://example.com")
+
+    def test_rsl_license_directive_extracted(self):
+        result = self._fetch("License: https://example.com/license.xml\nUser-agent: *\nDisallow:\n")
+        assert result["licensing"]["license_urls"] == ["https://example.com/license.xml"]
+
+    def test_content_usage_rule_extracted(self):
+        result = self._fetch("User-agent: *\nContent-Usage: train-ai=n\nDisallow:\n")
+        assert result["licensing"]["content_usage"] == ["train-ai=n"]
+
+    def test_content_signal_extracted(self):
+        result = self._fetch("Content-Signal: search=yes, ai-train=no\nUser-agent: *\nDisallow:\n")
+        assert result["licensing"]["content_signal"] == ["search=yes, ai-train=no"]
+
+    def test_no_licensing_directives(self):
+        result = self._fetch("User-agent: *\nDisallow:\n")
+        assert result["licensing"] == {"license_urls": [], "content_usage": [], "content_signal": []}

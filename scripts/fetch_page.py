@@ -606,6 +606,7 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
         "ai_crawler_status": {},
         "stale_tokens": [],
         "sitemaps": [],
+        "licensing": {"license_urls": [], "content_usage": [], "content_signal": []},
         "errors": [],
     }
 
@@ -643,6 +644,22 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
                     if not sitemap_url.startswith("http"):
                         sitemap_url = "http" + sitemap_url
                     result["sitemaps"].append(sitemap_url)
+                # Machine-readable AI-licensing directives (non-scoring —
+                # pure extraction; the skill layer renders presence as info).
+                # `split(":", 1)` keeps everything after the FIRST colon, so
+                # URLs with their own colons survive intact.
+                elif line.lower().startswith("license:"):
+                    result["licensing"]["license_urls"].append(
+                        line.split(":", 1)[1].strip()
+                    )
+                elif line.lower().startswith("content-usage:"):
+                    result["licensing"]["content_usage"].append(
+                        line.split(":", 1)[1].strip()
+                    )
+                elif line.lower().startswith("content-signal:"):
+                    result["licensing"]["content_signal"].append(
+                        line.split(":", 1)[1].strip()
+                    )
 
             # Determine status for each AI crawler
             for crawler in ai_crawlers:
