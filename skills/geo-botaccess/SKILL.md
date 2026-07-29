@@ -39,7 +39,7 @@ The probe groups bots into four classes because lab fleets are split by purpose,
 | Class | Bots | What blocking does to GEO |
 |---|---|---|
 | **Live-retrieval** | ChatGPT-User, Claude-User, Perplexity-User, MistralAI-User, Google-Agent, Google-NotebookLM, Google-GeminiNotebook | **Highest impact.** These fetch a page on demand when a user asks a question. Blocking removes user-triggered citations entirely. |
-| **Search-index** | OAI-SearchBot, Claude-SearchBot, PerplexityBot, DuckAssistBot, Amazonbot | **High impact.** These index pages for AI search results. Blocking removes the site from ChatGPT Search / Claude / Perplexity citations. Botify 2025 logs show OAI-SearchBot is ~256% more active on news/publishing sites than GPTBot — for publishers, this is the bot that matters. |
+| **Search-index** | OAI-SearchBot, Claude-SearchBot, PerplexityBot, MistralAI-Index, DuckAssistBot, Amazonbot | **High impact.** These index pages for AI search results. Blocking removes the site from ChatGPT Search / Claude / Perplexity citations. Botify 2025 logs show OAI-SearchBot is ~256% more active on news/publishing sites than GPTBot — for publishers, this is the bot that matters. |
 | **Traditional search** | GoogleBot, BingBot | **High impact, separate concern.** Blocking these kills regular Google/Bing indexing, which also feeds Google AI Overviews and Bing/Copilot. Almost always unintentional — flag loudly. |
 | **Training** | GPTBot, ClaudeBot, Google-CloudVertexBot, CCBot, Bytespider, Meta-ExternalAgent, cohere-ai | **Near-zero GEO impact.** Lab docs explicitly state this content is not used in live answers. Many publishers block these intentionally and still appear in AI citations. **Do not recommend unblocking.** |
 
@@ -52,7 +52,7 @@ The probe is implemented as the `bots` mode of `scripts/fetch_page.py`. It does 
 1. **Browser baseline** — fetches the URL with a normal Chrome user-agent so we know what real content looks like (size, body, headers).
 2. **JS challenge detection** — checks the baseline body for Cloudflare challenge markers (`cf-challenge`, `cf-turnstile`, "checking your browser", etc.). If a challenge is detected, the probe transparently falls back to a Playwright headless browser fetch so the comparison baseline is real content rather than a block page. If Playwright isn't installed, the probe degrades gracefully and switches to status-only block detection.
 3. **WAF / CDN fingerprinting** — inspects the baseline response headers and `Set-Cookie` to identify which security product is in front of the site. Detects Cloudflare, Akamai, Imperva Incapsula, Sucuri, AWS CloudFront, AWS WAF, AWS ELB, F5 BIG-IP, F5 BIG-IP ASM, Fastly, Azure Front Door, Barracuda, Wallarm, StackPath, Google Frontend. Identifying the specific product matters because remediation differs completely per product — see "Recommendation playbooks" below.
-4. **Per-bot probes** — replays the request with every active AI crawler user-agent in the roster (21 at v0.4.0; retired and opt-out tokens are excluded and reported in `excluded_tokens`) across the four classes above. For each bot the probe records HTTP status, body length, content similarity to the baseline, **and the bot's class and operator**. A bot is considered blocked if any of:
+4. **Per-bot probes** — replays the request with every active AI crawler user-agent in the roster (22 at v0.4.3; retired and opt-out tokens are excluded and reported in `excluded_tokens`) across the four classes above. For each bot the probe records HTTP status, body length, content similarity to the baseline, **and the bot's class and operator**. A bot is considered blocked if any of:
    - status is 403, 406, 429, or 503
    - body matches Cloudflare challenge markers (the "200 OK with a disguised block page" case)
    - body is non-trivially smaller AND content similarity to baseline is suspiciously low (silent content stripping)
@@ -229,6 +229,24 @@ Present the findings as:
 
 Keep it scannable. The user is iterating — they want to see the score change, find the new findings, and act, not read prose.
 
+### Address-verified crawlers — how to render (mandatory)
+
+Googlebot, Bingbot, and the Google-* fetchers are verified by the CDN/WAF using the requesting **network address**, not the user-agent string. Our probe runs from the auditor's machine, so a 403 for these bots is the *expected and correct* anti-impersonation response — it says nothing about whether the real crawler can reach the site.
+
+Render them as:
+
+`— Not tested (validated by network address — our probe cannot originate from the operator's network)`
+
+and add a follow-up task: verify in **Google Search Console** (URL Inspection → Test Live URL) and **Bing Webmaster Tools**. If independent evidence exists that the real crawler is reaching the site (e.g. the site appears in a `site:` search), cite it as corroboration.
+
+**Never render an off-network 403 for these bots as `❌ Blocked`.** That is a false alarm, and a Googlebot false alarm is expensive — it reads to a site owner as "we are falling out of Google Search", triggering panic and wasted engineering time over a measurement artifact.
+
+This applies to: `GoogleBot`, `BingBot`, `Google-Agent`, `Google-NotebookLM`, `Google-GeminiNotebook`, `Google-CloudVertexBot`.
+
+### Disclose the fetch method
+
+`fetch_page.py` now returns `fetch_method` and `challenge_detected`. If `fetch_method == "bot_ua_fallback"`, the site's WAF challenged an ordinary browser request and the content analysed is what an **AI crawler** receives. State this in the report methodology — it is arguably the more relevant view for a GEO audit, but it is a material caveat the reader must see.
+
 ## Bots you cannot verify (report this honestly)
 
 Two operators cannot be covered by UA-based probing, and the report must say so rather than implying complete coverage:
@@ -240,7 +258,7 @@ Also render the probe's `excluded_tokens` map: retired tokens and opt-out tokens
 
 ## Edge cases to mention to the user
 
-- **Bot verification by IP** — some sites correctly reject fake bot user-agents from residential IPs while letting the real Googlebot through via reverse-DNS verification. This probe always comes from the user's machine, so a 403 to "Googlebot" doesn't *definitively* prove the real Googlebot is blocked. It strongly suggests UA-based rules they should audit, but mention this nuance when reporting Googlebot blocks specifically.
+- **Bot verification by IP** — some sites correctly reject fake bot user-agents from residential IPs while letting the real Googlebot through via reverse-DNS verification. This probe always comes from the user's machine, so a 403 to "Googlebot" proves nothing about the real Googlebot. **These bots have a mandatory render — see "Address-verified crawlers — how to render (mandatory)" above; never render them as `❌ Blocked`.**
 - **Rate limiting vs bot blocking** — if the same bot returns 200 on one run and 429 on the next, the site may be rate-limiting rather than bot-blocking. The probe flags 429 as blocked, which is a reasonable simplification but worth mentioning if the pattern looks time-based.
 - **JS challenge baseline degradation** — if `js_challenge_detected` is true and `baseline.used_playwright` is false, the similarity-based block detection becomes unreliable (every response is being compared against a challenge page). Status-code detection still works, but warn the user that the report is best-effort.
 - **Identical responses across bots** — if every bot returns the same response (whether 200 or 403), it's likely UA-agnostic — either fully open or fully blocked at a layer that doesn't inspect User-Agent (IP-based, geo-based). Mention this so the user looks in the right place.

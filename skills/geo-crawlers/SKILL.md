@@ -359,11 +359,14 @@ Generate a file called `GEO-CRAWLER-ACCESS.md`:
 
 **Retired tokens still present:** [list any tokens from the `stale_tokens` field — cleanup item, not an access status. Write "None" if the field is empty.]
 
-## AI Visibility Score: [X]/100
+## Crawler Access Score: [overall_score]/100 (measured — live probe)
 
-**Tier 1 Access:** [X/5 crawlers allowed]
-**Tier 2 Access:** [X/5 crawlers allowed]
-**Tier 3 Access:** [X/4 crawlers allowed]
+**Per-class:** Live-retrieval [X] · Search-index [X] · Traditional-search [X] · Training [X]
+**Verdict:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED]
+
+<!-- Numbers come from the Step 0 probe's `overall_score` / `class_scores` / `verdict`.
+     Do not compute a score from the tier counts in this skill — see
+     "Crawler access score — use the measured one" below. -->
 
 ---
 
@@ -408,15 +411,8 @@ See https://contentsignals.org/ for the full specification.
 
 ---
 
-## Scoring for Crawler Access
+## Crawler access score — use the measured one
 
-The AI Crawler Access Score is calculated as:
+This skill reports **declared policy** (what robots.txt says). The score comes from **measured reachability** — the live probe's `overall_score` and `class_scores` (see the `geo-botaccess` skill).
 
-| Component | Weight | Scoring |
-|---|---|---|
-| Tier 1 Crawlers Allowed | 50% | 20 points per Tier 1 crawler allowed (5 crawlers = 100 points max, scaled to 50) |
-| Tier 2 Crawlers Allowed | 25% | 20 points per Tier 2 crawler allowed (5 crawlers = 100 points max, scaled to 25) |
-| No Blanket AI Blocks | 15% | Full points if no `User-agent: *` Disallow: / and no noai meta tags |
-| AI-Specific Files Present | 10% | 5 points for llms.txt, 5 points for sitemap accessible to AI crawlers |
-
-Final score = sum of all weighted components, capped at 100.
+Do not compute a second score from tier counts. A site with a permissive robots.txt and a blocking WAF is exactly the case this tool exists to catch, and a declared-policy score would read ~94/100 while reality reads ~31/100. Two scores that disagree force the reader to reconcile them; report one number, from the probe, and use this skill's tier tables to explain *what each bot does* rather than to compute anything.
