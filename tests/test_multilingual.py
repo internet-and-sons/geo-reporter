@@ -79,3 +79,13 @@ def test_brand_report_passes_languages_through():
     with patch("brand_scanner.requests.get", return_value=_json_resp({"query": {"search": []}, "search": []})):
         report = generate_brand_report("Some Brand", languages=("en", "he"))
     assert "languages" in report["platforms"]["wikipedia"]
+
+
+def test_wikimedia_calls_use_descriptive_ua():
+    """Wikimedia 403s spoofed browser UAs (T400119) — API calls must self-identify."""
+    with patch("brand_scanner.requests.get", return_value=_json_resp({"query": {"search": []}, "search": []})) as mock_get:
+        check_wikipedia_presence("Some Brand")
+    for call in mock_get.call_args_list:
+        ua = call.kwargs["headers"]["User-Agent"]
+        assert "GEO-Reporter" in ua
+        assert "Chrome" not in ua

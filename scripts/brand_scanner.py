@@ -31,6 +31,13 @@ DEFAULT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Wikimedia rejects browser-spoofed UAs on its APIs (policy T400119).
+# Their API etiquette requires a descriptive UA with contact info.
+WIKIMEDIA_HEADERS = {
+    "User-Agent": "GEO-Reporter/0.4 (https://github.com/internet-and-sons/geo-reporter; tal@internetandsons.com) python-requests",
+    "Accept": "application/json",
+}
+
 
 def check_youtube_presence(brand_name: str) -> dict:
     """Check brand presence on YouTube."""
@@ -130,7 +137,7 @@ def check_wikipedia_presence(brand_name: str, languages=("en", "he")) -> dict:
                 f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
                 f"&srsearch={quote_plus(brand_name)}&format=json"
             )
-            response = requests.get(api_url, headers=DEFAULT_HEADERS, timeout=15)
+            response = requests.get(api_url, headers=WIKIMEDIA_HEADERS, timeout=15)
             if response.status_code == 200:
                 search_results = response.json().get("query", {}).get("search", [])
                 if search_results:
@@ -154,7 +161,7 @@ def check_wikipedia_presence(brand_name: str, languages=("en", "he")) -> dict:
                 f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
                 f"&search={quote_plus(brand_name)}&language={lang}&format=json"
             )
-            response = requests.get(wd_api_url, headers=DEFAULT_HEADERS, timeout=15)
+            response = requests.get(wd_api_url, headers=WIKIMEDIA_HEADERS, timeout=15)
             if response.status_code == 200:
                 entities = response.json().get("search", [])
                 if entities:
