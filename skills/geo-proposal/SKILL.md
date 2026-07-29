@@ -52,6 +52,8 @@ Generate a fully customized, client-ready GEO service proposal that:
    - Business type
    - Estimated organic traffic impact
 
+**Prospect audits are External Observation mode (contract rule 13).** A prospect is not yet a client, so their site is audited as a third party: label deliverables "External Observation Only", cap the crawl, and present observations and opportunities rather than a /100 score you cannot fully contextualize. Switch to full internal-mode scoring only once they engage and confirm ownership/goals. When the source audit was run in External Observation mode, frame the proposal's findings as observed opportunities rather than a definitive score.
+
 ### Step 2: Customize the Proposal
 
 Auto-fill proposal template with:

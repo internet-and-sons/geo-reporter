@@ -28,6 +28,7 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 | `/geo citability <url>` | Score content for AI citation readiness |
 | `/geo crawlers <url>` | Check AI crawler access (robots.txt analysis) |
 | `/geo agentready <url>` | Agent-readiness & AI-licensing surface check (MCP, NLWeb, RSL, Web Bot Auth) — non-scoring |
+| `/geo integrity <url>` | GEO-spam & prompt-injection scan (hidden text, LLM-directed instructions) — non-scoring |
 | `/geo llmstxt <url>` | Analyze or generate llms.txt file |
 | `/geo brands <url>` | Scan brand mentions across AI-cited platforms |
 | `/geo platforms <url>` | Platform-specific optimization (ChatGPT, Perplexity, Google AIO) |
@@ -116,7 +117,7 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 
 ---
 
-## Sub-Skills (14 Specialized Components)
+## Sub-Skills (15 Specialized Components)
 
 | # | Skill | Directory | Purpose |
 |---|-------|-----------|---------|
@@ -134,6 +135,7 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 | 12 | geo-proposal | `skills/geo-proposal/` | Auto-generate client proposals from audit data |
 | 13 | geo-compare | `skills/geo-compare/` | Monthly delta tracking and progress reports |
 | 14 | geo-agentready | `skills/geo-agentready/` | Agent-readiness & AI-licensing surface (`/geo agentready` → `geo-agentready`, non-scoring) |
+| 15 | geo-integrity | `skills/geo-integrity/` | Content-integrity / GEO-spam & prompt-injection scan (`/geo integrity` → `geo-integrity`, non-scoring) |
 
 ---
 

@@ -114,6 +114,8 @@ Committed MRR: €6,000 | Pipeline Value: €4,500
 5. Add auto-note: "Quick audit run. GEO Score: XX/100."
 6. If score < 55: suggest "Score indicates strong sales opportunity. Run `/geo proposal <domain>` to generate proposal."
 
+**Prospect audits are External Observation mode (contract rule 13).** A prospect is not yet a client, so their site is audited as a third party: label deliverables "External Observation Only", cap the crawl, and present observations and opportunities rather than a /100 score you cannot fully contextualize. Switch to full internal-mode scoring only once they engage and confirm ownership/goals.
+
 ### `/geo prospect note <id-or-domain> "<text>"`
 
 1. Find prospect by ID or domain
