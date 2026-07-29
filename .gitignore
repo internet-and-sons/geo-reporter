@@ -61,3 +61,6 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Local tooling residue
+.playwright-mcp/

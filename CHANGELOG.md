@@ -8,6 +8,32 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-29
+
+**Theme: polish & consistency.** Clears the backlog accumulated across v0.4.0–v0.4.2 and the two live evals. Three of these were real defects that silently produced wrong client deliverables.
+
+### Fixed
+
+- **PDF generation crashed or silently swallowed content when a finding quoted HTML.** Data-derived values were interpolated raw into ReportLab markup. Measured against the pre-fix build: a finding recommending `<link rel=canonical>` — an everyday SEO recommendation — **aborted report generation entirely** with a parser error; `<time datetime>`, `<aside>`, and a client named `Smith & Sons` were silently dropped from the output. All 12 interpolation sites now escape data before markup conversion.
+- **Challenge-fronted sites were analysed as block pages.** `fetch_page()` had no WAF-challenge handling (only the bot probe did), so on a strict Cloudflare site every content, technical, and schema check ran against the interstitial. It now detects a challenge and retries once with a bot user-agent, exposing `fetch_method` and `challenge_detected` so the report can disclose which view was analysed.
+- **Two contradictory crawler scores.** `geo-crawlers` computed an "AI Visibility Score" from declared-policy tier counts — which read ~94/100 on a site the live probe scored 31/100. The declared-policy score is retired; measured reachability is the single number.
+- **Reference UA strings had drifted from the roster in five places**, including an Amazonbot string from an entirely different era — anyone copying it into a WAF allowlist would have written a rule that never matches. Now enforced by a test.
+
+### Added
+
+- **Address-verified crawler render rule** — Googlebot/Bingbot/Google-* are verified by network address, so an off-network 403 is the *expected* anti-impersonation response and must render as `— Not tested (validated by network address)`, never `❌ Blocked`. Two live evals had rendered this two different ways; a Googlebot false alarm reads to a site owner as "we're falling out of Google".
+- **`MistralAI-Index`** (vendor-verified) and current `GPTBot/1.4` / `OAI-SearchBot/1.4` UA strings. `OAI-AdsBot` was deliberately **not** added: it exists, but its documented purpose (validating submitted ad landing pages) maps to none of the four bot classes, and forcing a class would misreport it.
+- **Doc↔roster sync test** — every UA documented in `geo-crawlers` must match `AI_CRAWLERS` verbatim, with a stale-exemption guard so the allowlist can't silently rot.
+- **Structured TL;DR on the PDF cover** — the v0.4.0 TL;DR previously flattened into a prose blob on the most-read page of the deliverable.
+- **Bundled schema template index** — all 8 JSON-LD templates are now discoverable from the skill rather than only by listing the directory; placeholder tokens normalised to one convention.
+- **`geo-report` body sections converted to Finding/Evidence/Impact/Fix/Confidence** with enumerative tables relocated to the appendix (contract rules 3 and 8).
+- **Freshness prominence, `geo-compare` scoring-boundary caveat, and a `Content-Usage` scoping note.**
+
+### Decisions
+
+- **Freshness weight reviewed and deliberately left at 5%.** Raising it would break month-over-month comparability in `geo-compare`, a client-facing artifact. Consistent with how this project has handled every "signal matters more than its weight" question (informational negative signals, the llms.txt downgrade): report it better rather than rescale it. Freshness now emits a named-pages finding instead.
+- **`Google-NotebookLM` retirement deferred** — the vendor supports the legacy token through August 2026; the roster carries a dated reminder.
+
 ## [0.4.2] — 2026-07-29
 
 **Theme: integrity & entity depth.** Detects GEO-spam and prompt-injection aimed at AI crawlers (a check no other tool in this niche runs), deepens the entity-graph audit, and adds two report-integrity guardrails. Everything new here is non-scoring — signals for review, not grade changes.
@@ -244,7 +270,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.3
 [0.4.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.2
 [0.4.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.0
