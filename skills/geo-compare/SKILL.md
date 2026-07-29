@@ -289,6 +289,15 @@ written findings to estimate approximate scores based on issues described.
 A decline is not necessarily bad — it can mean new issues were discovered in the
 fresh audit that weren't visible before. Frame declines as "newly discovered opportunities."
 
+### Scoring-boundary caveat (mandatory)
+
+Scoring methodology changes between releases. When a comparison straddles such a boundary, part of the delta is the methodology, not the site.
+
+Known boundaries:
+- **v0.4.0** — AI Visibility reweighted to Citability 40 / Brand 30 / Crawler Access 30; llms.txt became informational (previously 10%). Crawler access moved to measured reachability rather than declared policy.
+
+If the baseline audit predates a boundary the current audit is past, say so explicitly in the delta report — e.g. "Part of this change reflects a scoring update in v0.4.0, not site movement" — and where possible compare the underlying findings (what was fixed / what regressed) rather than only the numbers. Never present a methodology-driven delta as client improvement or regression.
+
 ---
 
 ## Output
