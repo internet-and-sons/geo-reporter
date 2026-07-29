@@ -13,6 +13,10 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 
 This skill generates a professional, visually polished PDF report from GEO audit data. The PDF includes score gauges, bar charts, platform readiness visualizations, color-coded tables, and a prioritized action plan — ready to deliver directly to clients.
 
+## Report Contract (mandatory)
+
+Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 11 rules. In particular: the report leads with a ≤150-word TL;DR (score, top-3 actions with impact+effort, one-sentence posture); every status label comes from the contract's closed legend; every finding uses Finding/Evidence/Impact/Fix/Confidence; raw tables go to the appendix.
+
 ## Prerequisites
 
 - **ReportLab** must be installed: `pip install reportlab`
@@ -48,7 +52,7 @@ After running a full `/geo-audit`, collect all scores, findings, and recommendat
         "Gemini": 60,
         "Bing Copilot": 50
     },
-    "executive_summary": "A 4-6 sentence summary of the audit findings...",
+    "executive_summary": "TL;DR — score, one-sentence posture, top-3 actions with impact/effort/owner...",
     "findings": [
         {
             "severity": "critical",
@@ -74,6 +78,8 @@ After running a full `/geo-audit`, collect all scores, findings, and recommendat
     }
 }
 ```
+
+The JSON's executive-summary field must contain the TL;DR (score, top-3 actions with impact/effort/owner, one-sentence posture) — the PDF cover page renders it verbatim, so write it for a non-technical reader. Keep it under 150 words. Every value in `crawler_access[*].status` must come from the report contract's closed status legend — never "Unverified".
 
 ### Step 2: Write JSON Data to a Temp File
 
@@ -128,7 +134,7 @@ When the user runs this skill, follow this exact sequence:
    - Quick wins, medium-term, and strategic action items
    - Executive summary
 
-4. **Build the JSON** — Structure all data into the JSON schema shown above.
+4. **Build the JSON** — Structure all data into the JSON schema shown above. The JSON's executive-summary field must contain the TL;DR (score, top-3 actions with impact/effort/owner, one-sentence posture) — the PDF cover page renders it verbatim, so write it for a non-technical reader. If the source markdown report already opens with a TL;DR block, reuse it rather than writing a second summary.
 
 5. **Write JSON to temp file** — Save to `/tmp/geo-audit-data.json`
 
@@ -156,6 +162,7 @@ When extracting data from existing GEO markdown reports, look for these patterns
 - **Crawler Status**: Look for tables with "Allowed" or "Blocked" status for crawlers like GPTBot, ClaudeBot
 - **Findings**: Look for sections titled "Key Findings", "Critical Issues", "Recommendations"
 - **Action Items**: Look for sections titled "Quick Wins", "Action Plan", "Recommendations"
+- **Executive summary**: prefer the report's opening `## TL;DR` block verbatim (that is the contract-mandated summary); fall back to `## Executive Summary` only when no TL;DR block exists
 
 ## Notes
 

@@ -13,6 +13,10 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 
 This skill aggregates outputs from all GEO audit skills into a single, professional report that can be delivered directly to a client or stakeholder. The report is written for **business owners and marketing leaders**, not developers — technical findings are translated into business impact and clear action items with priority levels.
 
+## Report Contract (mandatory)
+
+Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 11 rules. In particular: the report leads with a ≤150-word TL;DR (score, top-3 actions with impact+effort, one-sentence posture); every status label comes from the contract's closed legend; every finding uses Finding/Evidence/Impact/Fix/Confidence; raw tables go to the appendix.
+
 ## How to Use This Skill
 
 1. Run the following audits first (or use existing report data):
@@ -66,18 +70,35 @@ The complete report follows this exact structure. Each section includes instruct
 
 ---
 
-### Section 1: Executive Summary
+### Section 1: TL;DR
 
-Write exactly ONE paragraph (4-6 sentences) covering:
+This is the FIRST content section of the report — nothing goes above it. Keep it under 150 words total. The client should be able to read only this block and know the score, the posture, and what to do next.
+
+```markdown
+## TL;DR
+
+**GEO Score: [X]/100 ([Rating])** [— up/down N since last audit]
+
+[One plain-language sentence on overall posture.]
+
+**Do these three things this week:**
+1. [Action] — Impact: [High/Med/Low] · Effort: [minutes/hours/days] · Owner: [developer/content/marketing]
+2. [Action] — Impact · Effort · Owner
+3. [Action] — Impact · Effort · Owner
+```
+
+The three actions are the highest impact-per-effort items from the Prioritized Action Plan — not a separate list. Include the delta clause only when a prior audit for the same domain exists.
+
+### Section 2: Executive Summary
+
+Write exactly ONE paragraph (3-5 sentences) that **adds to** the TL;DR rather than restating it. Do not repeat the score, the rating label, or the three actions. Cover:
 - What was analyzed (domain, number of pages, date of analysis)
-- The overall GEO Readiness Score with context ("XX/100, which places [brand] in the [label] tier")
-- The single most impactful finding (positive or negative)
-- Top 3 priority recommendations in one sentence
+- The single most impactful finding (positive or negative), with the observation that supports it
 - One sentence on the business impact ("Addressing these recommendations could increase AI-driven traffic by an estimated XX%, representing approximately $X,XXX/month based on current traffic patterns")
 
 **Tone**: Confident, direct, professional. No jargon. No hedging. Write as a consultant delivering findings, not as a tool generating a report.
 
-### Section 2: GEO Readiness Score
+### Section 3: GEO Readiness Score
 
 Present the overall score prominently:
 
@@ -98,7 +119,7 @@ Then break down by component in a table:
 | **Overall** | | | **XX/100** |
 ```
 
-### Section 3: AI Visibility Dashboard
+### Section 4: AI Visibility Dashboard
 
 Present per-platform readiness scores:
 
@@ -116,27 +137,29 @@ Present per-platform readiness scores:
 
 Add a brief paragraph explaining what these scores mean: "These scores reflect how likely your content is to be cited by each AI search platform. A score below 50 indicates significant barriers to citation on that platform."
 
-### Section 4: AI Crawler Access Status
+### Section 5: AI Crawler Access Status
 
-Present as a clear table:
+Present as a clear table. **Every value in the Status column must come from the report contract's closed legend** — no free-text statuses, and never "Unverified". Opt-out tokens that are never fetched (Google-Extended, Applebot-Extended) render as `— Not tested (opt-out token — never fetches)`, not as a pass or fail.
 
 ```markdown
 ## AI Crawler Access
 
 | AI Crawler | Platform | Status | Impact | Recommendation |
 |---|---|---|---|---|
-| Googlebot | Google Search + AIO | Allowed/Blocked | Critical | [Action] |
-| GPTBot | ChatGPT / OpenAI | Allowed/Blocked | High | [Action] |
-| Bingbot | Bing + Copilot + ChatGPT | Allowed/Blocked | High | [Action] |
-| PerplexityBot | Perplexity AI | Allowed/Blocked | Medium | [Action] |
-| Google-Extended | Gemini Training | Allowed/Blocked | Medium | [Action] |
-| ClaudeBot | Anthropic Claude | Allowed/Blocked | Medium | [Action] |
-| Applebot-Extended | Apple Intelligence | Allowed/Blocked | Medium | [Action] |
+| Googlebot | Google Search + AIO | ✅ Confirmed (tested live) | Critical | [Action] |
+| GPTBot | ChatGPT / OpenAI | ❌ Blocked by <product> (mismatch — declared open) | High | [Action] |
+| Bingbot | Bing + Copilot + ChatGPT | ✅ Confirmed (tested live) | High | [Action] |
+| PerplexityBot | Perplexity AI | ❌ Blocked (declared, intentional) | Medium | [Action] |
+| Google-Extended | Gemini Training | — Not tested (opt-out token — never fetches) | Medium | [Action] |
+| ClaudeBot | Anthropic Claude | ⚠️ Content differs for bots | Medium | [Action] |
+| Applebot-Extended | Apple Intelligence | — Not tested (opt-out token — never fetches) | Medium | [Action] |
 ```
+
+Print the legend itself directly beneath the table so the client can decode every label without leaving the page.
 
 **Translate for the client**: "Blocking AI crawlers is like closing your store during business hours. If a crawler cannot access your site, the AI platform it powers cannot cite your content. We recommend allowing all major AI crawlers unless you have a specific data licensing concern."
 
-### Section 5: Brand Authority Analysis
+### Section 6: Brand Authority Analysis
 
 Present entity presence across platforms:
 
@@ -157,7 +180,7 @@ Present entity presence across platforms:
 
 **Translate for the client**: "AI platforms build trust by cross-referencing your brand across multiple authoritative sources. Each platform where your brand has an accurate, consistent presence increases the likelihood of being cited in AI answers."
 
-### Section 6: Citability Analysis
+### Section 7: Citability Analysis
 
 #### Top 5 Most Citable Pages
 For each page:
@@ -173,7 +196,7 @@ For each page:
 
 **Business impact framing**: "Your most citable pages are your best candidates for appearing in AI-generated answers. Improving the 5 least citable pages represents the highest-ROI content investment you can make for AI visibility."
 
-### Section 7: Technical Health Summary
+### Section 8: Technical Health Summary
 
 Present the key technical findings in business-friendly language:
 
@@ -192,7 +215,7 @@ Present the key technical findings in business-friendly language:
 
 **Critical finding callout**: If SSR is missing or partial, highlight this prominently: "Your site uses client-side rendering, which means AI crawlers see an empty page when they visit. This is the single most impactful technical issue for AI search visibility. Until this is resolved, most AI platforms cannot cite your content."
 
-### Section 8: Schema & Structured Data
+### Section 9: Schema & Structured Data
 
 ```markdown
 ## Schema & Structured Data
@@ -210,7 +233,7 @@ Present the key technical findings in business-friendly language:
 
 If schemas are missing, note: "Ready-to-use structured data code has been prepared and is included in the technical appendix. Your development team can add this to your site with minimal effort."
 
-### Section 9: llms.txt Status
+### Section 10: llms.txt Status
 
 ```markdown
 ## llms.txt — AI Content Guide
@@ -223,7 +246,7 @@ If schemas are missing, note: "Ready-to-use structured data code has been prepar
 
 **Translate for the client**: "llms.txt is an emerging standard (similar to robots.txt) that tells AI systems what your site is about and which pages are most important. While not universally adopted yet, implementing it positions your brand ahead of competitors and provides direct guidance to AI platforms."
 
-### Section 10: Prioritized Action Plan
+### Section 11: Prioritized Action Plan
 
 This is the most important section of the report. Organize actions by timeline and impact.
 
@@ -294,7 +317,7 @@ Use conservative estimates. Base the dollar figure on:
 - AI search is projected to drive 25-40% of organic discovery by end of 2026
 - A 10-point GEO score improvement typically correlates with a 15-25% increase in AI citation frequency
 
-### Section 11: Competitor Comparison (if competitor URLs provided)
+### Section 12: Competitor Comparison (if competitor URLs provided)
 
 If competitor URLs were analyzed alongside the primary domain:
 
@@ -319,10 +342,15 @@ If competitor URLs were analyzed alongside the primary domain:
 [Specific areas where competitors have an advantage, with actions to close the gap]
 ```
 
-### Section 12: Appendix
+### Section 13: Appendix
 
 ```markdown
 ## Appendix
+
+### Raw Data Tables
+Every table longer than 6 rows lives here — full crawler probe results, per-page
+citability scores, complete schema inventory, full platform matrices. The body
+sections above reference these by name rather than reproducing them.
 
 ### Methodology
 This GEO audit was conducted using the following methodology:
@@ -366,6 +394,7 @@ This GEO audit was conducted using the following methodology:
 ## Formatting and Tone Guidelines
 
 ### Formatting
+- Move any table longer than 6 rows to the appendix; the body carries findings in Finding/Evidence/Impact/Fix/Confidence format.
 - Use clean markdown throughout: tables, headers (H2/H3), bullet points, bold for emphasis
 - Tables for data, bullets for recommendations, bold for key terms
 - One blank line between sections for readability
