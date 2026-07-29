@@ -20,7 +20,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from reportlab.platypus import Paragraph  # noqa: E402
 
-from generate_pdf_report import build_styles, render_tldr_flowables  # noqa: E402
+from generate_pdf_report import (  # noqa: E402
+    build_styles,
+    escape_markup,
+    render_tldr_flowables,
+    _action_markup,
+    generate_report,
+)
 
 
 STRUCTURED = (
@@ -162,3 +168,117 @@ def test_structured_flowables_actually_render(styles):
     )
     for flowable in render_tldr_flowables(text, styles):
         flowable.wrap(400, 800)
+
+
+# ------------------------------------------------------------------
+# escape_markup — data-derived values interpolated into Paragraph markup
+#
+# GEO findings routinely quote HTML ("add <meta name=\"robots\">", "use
+# <time datetime>", "wrap in <aside>"). Before v0.4.3 those tags were handed
+# straight to ReportLab's mini-XML parser, which silently swallowed them.
+# ------------------------------------------------------------------
+
+HTML_FINDING = 'Add <meta name="robots"> tag'
+HOSTILE_BRAND = "Smith & Sons <Holdings>"
+
+
+def test_escape_markup_escapes_xml_significant_characters():
+    assert escape_markup(HTML_FINDING) == 'Add &lt;meta name="robots"&gt; tag'
+    assert escape_markup(HOSTILE_BRAND) == "Smith &amp; Sons &lt;Holdings&gt;"
+
+
+def test_escape_markup_handles_none_and_non_strings():
+    assert escape_markup(None) == ""
+    assert escape_markup(42) == "42"
+
+
+def _rendered(para):
+    """Text ReportLab actually laid out, whitespace-normalised (words are separate frags)."""
+    para.wrap(400, 800)
+    joined = "".join(frag.text for line in para.blPara.lines for frag in line.words)
+    return joined.replace(" ", "")
+
+
+def test_escaped_html_finding_survives_into_a_rendered_paragraph(styles):
+    """The escaped tag must still be there after ReportLab parses the markup."""
+    para = Paragraph(f"<b>{escape_markup(HTML_FINDING)}</b>", styles["BodyText_Custom"])
+    assert "&lt;meta" in para.text
+    assert '<metaname="robots">' in _rendered(para)
+
+
+def test_escaped_brand_name_survives_into_a_rendered_paragraph(styles):
+    para = Paragraph(
+        f"Generative Engine Optimization Audit for <b>{escape_markup(HOSTILE_BRAND)}</b>",
+        styles["ReportSubtitle"],
+    )
+    assert "Smith&Sons<Holdings>" in _rendered(para)
+
+
+def test_action_markup_escapes_string_actions(styles):
+    markup = _action_markup(1, 'Wrap sidebars in <aside> — see <time datetime>')
+    assert "&lt;aside&gt;" in markup
+    assert "&lt;time datetime&gt;" in markup
+    assert markup.startswith("<b>1.</b> ")
+    Paragraph(markup, styles["Recommendation"]).wrap(400, 800)
+
+
+def test_action_markup_escapes_dict_actions(styles):
+    markup = _action_markup(2, {"action": "Add <link rel=canonical>", "impact": "R&D heavy"})
+    assert "&lt;link rel=canonical&gt;" in markup
+    assert "R&amp;D heavy" in markup
+    assert "<i>" in markup  # the literal markup we construct is untouched
+    Paragraph(markup, styles["Recommendation"]).wrap(400, 800)
+
+
+def test_action_markup_supports_bold_in_data():
+    assert "<b>robots.txt</b>" in _action_markup(1, "Fix **robots.txt** today")
+
+
+# ------------------------------------------------------------------
+# End-to-end: a report full of HTML-quoting audit data
+# ------------------------------------------------------------------
+
+HOSTILE_DATA = {
+    "url": "https://smith-and-sons.example",
+    "brand_name": HOSTILE_BRAND,
+    "date": "2026-07-29",
+    "geo_score": 58,
+    "executive_summary": (
+        "**GEO Score: 58/100 — Moderate**\n"
+        "Smith & Sons is crawlable but unattributable.\n"
+        '1. Add <meta name="robots"> tag — Impact: High | Effort: Low | Owner: Dev'
+    ),
+    "findings": [
+        {"severity": "critical", "title": HTML_FINDING,
+         "description": "Pages ship no <time datetime> element, so freshness is invisible."},
+    ],
+    "quick_wins": ["Wrap the sidebar in <aside> for Smith & Sons"],
+    "medium_term": [{"action": "Add <link rel=canonical>", "impact": "R&D heavy"}],
+    "crawler_access": {
+        "GPTBot": {"platform": "ChatGPT <web>", "status": "Allowed",
+                   "recommendation": "Keep allowed & monitor"},
+    },
+}
+
+
+def test_report_with_html_quoting_data_builds(tmp_path):
+    out = tmp_path / "hostile.pdf"
+    generate_report(dict(HOSTILE_DATA), str(out))
+    assert out.exists()
+    assert out.stat().st_size > 5000
+
+
+def test_html_quoting_finding_survives_into_the_pdf_text(tmp_path):
+    pypdf = pytest.importorskip("pypdf")
+    out = tmp_path / "hostile.pdf"
+    generate_report(dict(HOSTILE_DATA), str(out))
+
+    text = "".join(page.extract_text() for page in pypdf.PdfReader(str(out)).pages)
+    assert '<meta name="robots">' in text     # finding title + TL;DR action
+    assert "<time datetime>" in text          # finding description
+    assert "<aside>" in text                  # quick win
+    assert "<link rel=canonical>" in text     # medium-term action
+    assert "Smith & Sons <Holdings>" in text  # cover subtitle
+    assert "ChatGPT <web>" in text            # crawler table cell
+    assert "&amp;" not in text                # entities must not leak as literals
+    assert "&lt;" not in text

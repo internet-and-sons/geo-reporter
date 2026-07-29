@@ -343,16 +343,41 @@ def _resolve_style(styles, *names):
     return styles['Normal']
 
 
+def escape_markup(value):
+    """Escape XML-significant characters in a data-derived value.
+
+    Every audit-supplied string interpolated into a Paragraph must go through
+    this. GEO findings routinely quote HTML — 'add <meta name="robots">',
+    'use <time datetime>', 'wrap in <aside>' — and ReportLab's mini-XML parser
+    would otherwise silently swallow the tag or raise on a client named 'A & B'.
+
+    Escape ONLY data-derived values, never the literal markup being constructed.
+    """
+    if value is None:
+        return ""
+    return (str(value).replace("&", "&amp;")
+                      .replace("<", "&lt;")
+                      .replace(">", "&gt;"))
+
+
 def _to_inline_markup(text):
     """Escape XML-significant characters, then convert **bold** to <b>bold</b>.
 
     Escaping happens FIRST so that client-supplied text (a brand name containing
     '&', an action mentioning '<robots.txt>') can never break ReportLab's parser.
     """
-    escaped = (text.replace("&", "&amp;")
-                   .replace("<", "&lt;")
-                   .replace(">", "&gt;"))
-    return _BOLD_SPAN.sub(r"<b>\1</b>", escaped)
+    return _BOLD_SPAN.sub(r"<b>\1</b>", escape_markup(text))
+
+
+def _action_markup(index, action):
+    """Render one action-plan item as inline markup, escaping the data-derived parts.
+
+    Accepts either a plain string or a {'action': ..., 'impact': ...} dict.
+    """
+    if isinstance(action, dict):
+        return (f"<b>{index}.</b> {_to_inline_markup(action.get('action', ''))} "
+                f"— <i>{_to_inline_markup(action.get('impact', ''))}</i>")
+    return f"<b>{index}.</b> {_to_inline_markup(action)}"
 
 
 def _is_structured_tldr(text):
@@ -545,7 +570,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     # Subtitle
     elements.append(Paragraph(
-        f"Generative Engine Optimization Audit for <b>{brand_name}</b>",
+        f"Generative Engine Optimization Audit for <b>{escape_markup(brand_name)}</b>",
         styles['ReportSubtitle']
     ))
 
@@ -601,7 +626,8 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
     else:
         elements.append(Paragraph(
             f"This report presents the findings of a comprehensive Generative Engine Optimization (GEO) "
-            f"audit conducted on <b>{brand_name}</b> ({url}). The analysis evaluated the website's readiness "
+            f"audit conducted on <b>{escape_markup(brand_name)}</b> ({escape_markup(url)}). "
+            f"The analysis evaluated the website's readiness "
             f"for AI-powered search engines including Google AI Overviews, ChatGPT, Perplexity, Gemini, "
             f"and Bing Copilot. The overall GEO Readiness Score is <b>{geo_score}/100</b>, "
             f"placing the site in the <b>{get_score_label(geo_score)}</b> tier.",
@@ -748,16 +774,16 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
                     s_style = status_style_default
 
                 crawler_data.append([
-                    Paragraph(crawler_name, cell_style),
-                    Paragraph(info.get("platform", ""), cell_style),
-                    Paragraph(status_text, s_style),
-                    Paragraph(info.get("recommendation", ""), cell_style),
+                    Paragraph(escape_markup(crawler_name), cell_style),
+                    Paragraph(escape_markup(info.get("platform", "")), cell_style),
+                    Paragraph(escape_markup(status_text), s_style),
+                    Paragraph(escape_markup(info.get("recommendation", "")), cell_style),
                 ])
             else:
                 crawler_data.append([
-                    Paragraph(crawler_name, cell_style),
+                    Paragraph(escape_markup(crawler_name), cell_style),
                     Paragraph("", cell_style),
-                    Paragraph(str(info), cell_style),
+                    Paragraph(escape_markup(info), cell_style),
                     Paragraph("", cell_style),
                 ])
 
@@ -798,11 +824,12 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
                 sev_color = TEXT_SECONDARY
 
             elements.append(Paragraph(
-                f'<font color="{sev_color.hexval()}">[{severity}]</font> <b>{title}</b>',
+                f'<font color="{sev_color.hexval()}">[{escape_markup(severity)}]</font> '
+                f'<b>{_to_inline_markup(title)}</b>',
                 styles['BodyText_Custom']
             ))
             if description:
-                elements.append(Paragraph(description, styles['Recommendation']))
+                elements.append(Paragraph(_to_inline_markup(description), styles['Recommendation']))
             elements.append(Spacer(1, 4))
     else:
         elements.append(Paragraph(
@@ -827,11 +854,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if quick_wins:
         for i, action in enumerate(quick_wins, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_wins = [
             "Allow all Tier 1 AI crawlers in robots.txt (GPTBot, ClaudeBot, PerplexityBot)",
@@ -854,11 +877,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if medium_term:
         for i, action in enumerate(medium_term, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_medium = [
             "Restructure top 10 pages with question-based headings and direct answer blocks",
@@ -881,11 +900,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if strategic:
         for i, action in enumerate(strategic, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_strategic = [
             "Build Wikipedia/Wikidata entity presence through press coverage and notability",
@@ -906,7 +921,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
     elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceAfter=12))
 
     elements.append(Paragraph(
-        f"This GEO audit was conducted on {date} analyzing {url}. "
+        f"This GEO audit was conducted on {escape_markup(date)} analyzing {escape_markup(url)}. "
         "The analysis evaluated the website across six dimensions: AI Citability & Visibility (25%), "
         "Brand Authority Signals (20%), Content Quality & E-E-A-T (20%), Technical Foundations (15%), "
         "Structured Data (10%), and Platform Optimization (10%).",
