@@ -229,6 +229,43 @@ AI-generated content is **acceptable** per Google's guidance (March 2024 clarifi
 
 ---
 
+## Scorer Negative Signals (informational — non-scoring)
+
+`citability_scorer.py`'s `analyze_page_citability()` returns a `negative_signals` dict alongside the citability grade. Run the scorer and read it:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/citability_scorer.py" <url>
+```
+
+Each signal is a `{value, flagged, note}` dict:
+
+| Signal | Flags when | Reader meaning |
+|---|---|---|
+| `keyword_stuffing` | top-token frequency > 0.06 of body | One term over-repeated — reads as SEO manipulation. The Princeton KDD-2024 study measured keyword stuffing at roughly **-10% citation likelihood** |
+| `cta_chrome_ratio` | > 0.30 of blocks | CTA/nav/share chrome crowding out citable prose |
+| `boilerplate_ratio` | > 0.25 of blocks | Near-duplicate blocks diluting unique content |
+| `missing_author` | no byline detected | No author signal — AI engines weight author expertise |
+
+**Design decision (this release): these signals are INFORMATIONAL and do NOT change the Content Score.** They are diagnostic colour surfaced for the reader, not a scored dimension. Render each **flagged** signal as a non-scoring finding in the contract Finding/Evidence/Impact/Fix/Confidence format:
+
+> **Finding:** [one sentence naming the flagged signal].
+> **Evidence:** [the measured `value` vs. its threshold].
+> **Impact:** [reader-terms; for keyword stuffing cite the ~-10% Princeton KDD-2024 figure, otherwise use the signal's `note`].
+> **Fix:** [content task — reduce repetition / trim chrome / de-duplicate / add byline + Person schema].
+> **Confidence:** Likely. (Measured pattern — a signal, not proof.)
+
+If nothing is flagged, state that in one line. Do not manufacture findings from unflagged signals, and never fold these into the 0-100 Content Score.
+
+## Content-Integrity Scan (non-scoring signal)
+
+Content-quality analysis should also run the integrity scan (or consume the orchestrator's integrity block if already produced) to catch GEO-spam and prompt-injection aimed at AI crawlers — hidden text, model-directed instructions, zero-width characters, cloaked keyword blocks:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> integrity
+```
+
+Surface any signals using the **`geo-integrity` skill's framing** — do not duplicate its rules here: signal-not-verdict, non-scoring, evidence always quoted, innocent explanations (plugin/theme/inherited SEO vendor) named, and any flagged finding capped at **Confidence: Likely** (never Confirmed — a *clean* scan is confirmable; a flagged one is only "likely" a problem). See `skills/geo-integrity/SKILL.md` for the full rendering contract.
+
 ## Content Freshness Assessment
 
 ### Publication Dates
@@ -337,6 +374,19 @@ Date: [Date]
 
 ## AI Content Concerns
 [Any low-quality AI content patterns detected, with specific examples]
+
+## Scorer Negative Signals (informational — does NOT affect Content Score)
+| Signal | Value | Flagged? | Note |
+|---|---|---|---|
+| Keyword stuffing | [value] | [Yes/No] | Princeton KDD-2024: ~-10% citation likelihood |
+| CTA/chrome ratio | [value] | [Yes/No] | [note] |
+| Boilerplate ratio | [value] | [Yes/No] | [note] |
+| Missing author | [Yes/No] | [Yes/No] | [note] |
+
+[Each flagged signal also rendered as a contract-format finding, Confidence Likely. If none flagged, say so.]
+
+## Content Integrity (non-scoring signal)
+[Signals from `fetch_page.py <url> integrity`, rendered per the `geo-integrity` skill's framing — signal-not-verdict, evidence quoted, max Confidence Likely. A clean scan is a small positive trust signal.]
 
 ## Freshness Assessment
 Tiers come from `freshness.tier` (fetch_page `page` mode). On bilingual sites, group rows by language tree.

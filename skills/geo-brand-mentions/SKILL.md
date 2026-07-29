@@ -209,6 +209,63 @@ Brand_Authority_Score = (YouTube * 0.25) + (Reddit * 0.25) + (Wikipedia * 0.20) 
 
 ---
 
+## Source Taxonomy (Profound model)
+
+A Brand Authority Score answers "how much presence?" It does not answer "presence *of what kind*?" — and for AI citation, kind matters more than volume. AI engines do not weight all corroboration equally: a brand described by independent journalists and institutional references reads as a real, verifiable entity; a brand whose only "authority" is its own website and a wall of press-release syndication reads as thin — self-asserted, not corroborated. Classify **every** brand mention and citation source you find into one of these six **Profound taxonomy** buckets:
+
+| Bucket | What belongs here | Examples | AI weight |
+|---|---|---|---|
+| **Owned** | Domains, profiles, and channels the brand itself controls | Brand's own site, its blog, its official YouTube/LinkedIn/X, its docs | Low — self-asserted, not corroboration |
+| **Competitor** | Sources controlled by a rival brand | A competitor's comparison page, their "alternatives to X" post | Context signal — shows the brand is in the consideration set, but the framing is adversarial |
+| **Earned Media** | Independent journalism and editorial coverage the brand did not pay to place | News articles, trade-press reviews, independent blog roundups, analyst write-ups | **High** — third-party editorial judgement is the strongest corroboration |
+| **PR Wire** | Press-release distribution and syndication | PRNewswire/BusinessWire/EIN pickups, verbatim republished releases | **Low** — self-authored copy at scale; AI engines increasingly discount near-duplicate wire syndication |
+| **Social** | Community and discussion platforms | Reddit threads, X/Twitter discussion, LinkedIn posts by non-employees, YouTube reviews/comments | Medium-High — high-engagement, heavily indexed (see platform ranking above) |
+| **Institution** | Encyclopedic, governmental, academic, and structured reference sources | Wikipedia, Wikidata, .gov/.edu references, reputable industry directories | **High** — the entity-recognition backbone of AI knowledge graphs |
+
+**Why the split matters (state this in the report):** AI engines weight **Earned Media** and **Institution** far above **Owned** and **PR Wire**. A brand can have a high raw mention count that collapses under this lens — if 90% of "authority" is Owned + PR Wire, the brand has *thin real corroboration* and is vulnerable: it looks known to itself, not to the independent web that AI models trust. Two brands with the same Brand Authority Score can have opposite citation prospects once you see the source mix.
+
+**Rendering rule:** in the report, group the mentions/citations you found under these six bucket headings (omit a bucket only if genuinely empty, and say so). Then give a one-line **source-mix read**: the rough share that is Earned Media + Institution (the corroborated core) versus Owned + PR Wire (the self-asserted core). This is a *descriptive* lens, not a new number — it does not change the Brand Authority Score; it explains what the score is made of.
+
+---
+
+## sameAs Liveness — Entity-Graph Edge Health
+
+The `sameAs` array in an Organization/Person JSON-LD block is the brand's declared entity graph: the cross-platform edges (LinkedIn, Wikipedia, Crunchbase, X, etc.) an AI engine walks to confirm "the entity on this page is the same entity over there." Every **broken** `sameAs` link is a dead edge — it weakens cross-platform entity resolution exactly where it should be strengthening it. This is a concrete, verifiable finding, unlike the softer platform-presence estimates above. (Real-world case: law.co.il shipped a LinkedIn `sameAs` whose `href="#"` — a live-looking edge that resolved to nothing.)
+
+**Run the check** on the structured data from the page fetch:
+
+```bash
+python3 - "$URL" <<'PY'
+import sys, json, subprocess, os
+ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT", os.path.expanduser("~/.claude/skills/geo"))
+sys.path.insert(0, ROOT)
+from scripts.brand_scanner import check_sameas_liveness
+page = json.loads(subprocess.check_output(["python", f"{ROOT}/scripts/fetch_page.py", sys.argv[1], "page"]))
+print(json.dumps(check_sameas_liveness(page.get("structured_data", [])), indent=2))
+PY
+```
+
+Returns `{sameas_urls, at_ids, at_id_present, checks:[{url,platform,status,live}], live_count, broken:[urls]}`.
+
+**Render the results as contract findings:**
+
+- **Broken sameAs links** (`broken` non-empty) — one Medium finding:
+  > **Finding:** N of the brand's declared `sameAs` entity-graph links are dead.
+  > **Evidence:** `[quote each broken URL + its HTTP status from `checks`, e.g. "https://linkedin.com/company/x → 404", or "href=\"#\" → not a resolvable URL"]`.
+  > **Impact:** Each dead edge is a cross-platform identity link AI engines cannot follow. The entity graph that lets a model confirm "this brand = that LinkedIn = that Wikidata item" is only as trustworthy as its links resolve; broken edges weaken entity resolution and erode the corroboration that drives citation.
+  > **Fix:** Repair or remove each dead `sameAs` in the Organization/Person JSON-LD — point to the live profile URL, or drop the entry. Developer task, minutes.
+  > **Confidence:** Confirmed. (We made the request and observed the failure.)
+
+- **Missing `@id`** (`at_id_present == false`) on the Organization/Person node — one recommendation, Confidence Likely:
+  > **Finding:** The Organization/Person schema has no `@id`, so its identity is not anchored across the site.
+  > **Impact:** A stable `@id` is the canonical entity handle that lets nodes on other pages (Article `author`, Product `brand`, breadcrumb) point back to one entity instead of re-declaring loosely-matched copies. Without it, the entity graph is a set of look-alikes rather than one resolved node.
+  > **Fix:** Add a stable, absolute `@id` (e.g. `https://example.com/#organization`) to the Organization/Person block and reference it by `@id` from other schema nodes. Developer task, minutes.
+  > **Confidence:** Likely.
+
+  Cross-page `@id` **consistency** (does every page reuse the same `@id` for the same entity?) is a full-site check owned by the audit orchestrator — here, flag only the presence/absence of `@id` on this page's Organization/Person node. A live scan with `live_count == len(sameas_urls)` and `at_id_present == true` is a small positive trust signal worth stating.
+
+---
+
 ## Analysis Procedure
 
 ### Step 1: Identify Brand Information
