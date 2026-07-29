@@ -94,6 +94,7 @@ This fetches a baseline (Chrome user-agent + optional Playwright fallback if Clo
 | `class_scores` | Per-class scores (`live-retrieval`, `search-index`, `traditional-search`, `training`) — 0 to 100 |
 | `verdict` | One of `OPEN`, `HEALTHY_PUBLISHER`, `PARTIALLY_BLOCKED`, `MOSTLY_BLOCKED`, `BLOCKED` |
 | `overall_score` | Weighted: `0.5·live-retrieval + 0.35·traditional + 0.15·training` |
+| `payment_required_bots` | Bots receiving HTTP 402 — render 💰 Payment required per the contract legend; exclude from mismatch findings; if non-empty, state the payment posture in the crawler-access summary line |
 | `excluded_tokens` | Map of roster entries that were NOT probed → reason (`retired` or `opt-out-token`). Render these as `— Not tested (<reason>)`; never leave the row blank or call it "Unverified" |
 
 Use the probe results — not your own robots.txt interpretation — as the per-bot status in the final table. Per-bot status comes from `probes[].verdict`: `allowed` (2xx + content matches baseline), `blocked` (4xx/5xx or challenge body), or `stripped` (200 OK but body suspiciously small / dissimilar to baseline — silent content-stripping).
@@ -120,6 +121,8 @@ The JSON output's `ai_crawler_status` field returns one of these per crawler:
 
 The output also carries `stale_tokens` — retired crawler tokens the site's robots.txt still writes rules for. If non-empty, raise an informational finding recommending cleanup of the dead rules (no score impact).
 
+The robots output's `licensing` field (`license_urls` / `content_usage` / `content_signal`) surfaces machine-readable AI-licensing declarations — report presence as an informational line; the `geo-agentready` skill covers the full protocol surface.
+
 **Critical: do not re-parse robots.txt yourself.** The script's `fetch_robots_txt()` already handles `User-agent: *` wildcard inheritance correctly. Hand-rolled parsing in the past has produced false "Unverified" status on fully permissive sites (e.g. `User-agent: *` + empty `Disallow:` was mis-classified as "Unknown" when it actually means "Allowed via wildcard").
 
 #### Step 3c: Reconcile and render the final table
@@ -135,9 +138,14 @@ For each AI crawler, render a row built from BOTH signals — and explicitly fla
 | ❌ Blocked | Blocked | **❌ Blocked (declared, intentional)** | OK if training-class bot and posture is HEALTHY_PUBLISHER; otherwise High |
 | ⚠️ Stripped (200, body dissimilar) | Allowed | **⚠️ Content differs for bots** — bot reaches the page but receives a different body than Chrome does | High |
 | ❌ Blocked | `NOT_MENTIONED` | **❌ Blocked by \<product\> (mismatch — declared open)** | High — WAF override with no robots.txt context |
+| 💰 Payment required (402, in `payment_required_bots`) | any | **💰 Payment required (HTTP 402 — site monetizes AI access)** | Informational |
 | not probed (in `excluded_tokens`) | any | **— Not tested (\<reason\>)** — e.g. opt-out token, retired token | Informational |
 
+A bot in `payment_required_bots` renders **💰 Payment required (HTTP 402 — site monetizes AI access)** regardless of declared policy — it is a posture, not a mismatch.
+
 Show the WAF fingerprint (`wafs_detected`) and the probe verdict (`verdict`) above the table. If `verdict == HEALTHY_PUBLISHER` (training-class bots blocked, retrieval-class allowed — the NYT/WSJ/Reuters/BBC posture), say so explicitly and do not flag the training blocks as issues.
+
+**Payment-posture surfacing rule (mandatory).** When `payment_required_bots` is non-empty, the crawler-access summary line MUST state the payment posture explicitly (e.g. `Overall posture: OPEN — but 6 bots are tolled (pay-per-crawl)`). Tolled bots count as reachable in `class_scores` and `overall_score`, so without this line a fully-tolled site would read as perfectly healthy.
 
 #### Crawler Access Score
 
@@ -264,15 +272,15 @@ Citation-unlikely areas needing improvement:
 ### AI Crawler Access
 
 **WAF/CDN detected:** [Cloudflare / AWS WAF / Imperva / Akamai / none]
-**Overall posture:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED] (live probe verdict)
+**Overall posture:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED] (live probe verdict) [— but N bots are tolled (pay-per-crawl); required whenever `payment_required_bots` is non-empty]
 
-Legend: ✅ Confirmed (tested live) · ❌ Blocked by <product> (mismatch — declared open) · ❌ Blocked (declared, intentional) · ⚠️ Content differs for bots · — Not tested (<reason>)
+Legend: ✅ Confirmed (tested live) · ❌ Blocked by <product> (mismatch — declared open) · ❌ Blocked (declared, intentional) · ⚠️ Content differs for bots · 💰 Payment required (HTTP 402 — site monetizes AI access) · — Not tested (<reason>)
 
 Bots in the probe output's `excluded_tokens` (retired tokens, opt-out tokens like Google-Extended) render as `— Not tested (opt-out token — robots.txt declaration is the only signal that exists)` or `— Not tested (retired token)`. If `stale_tokens` from the robots output is non-empty, add an informational finding recommending cleanup of the dead rules.
 
 | Crawler | Live status | Declared (robots.txt) | Render | Notes |
 |---|---|---|---|---|
-| GPTBot | [200 / 403 / etc.] | [ALLOWED / ALLOWED_BY_DEFAULT / BLOCKED / NO_ROBOTS_TXT / etc.] | ✅ Confirmed (tested live) / ❌ Blocked by <product> (mismatch — declared open) / ❌ Blocked (declared, intentional) / ⚠️ Content differs for bots / — Not tested (<reason>) | [Details] |
+| GPTBot | [200 / 403 / etc.] | [ALLOWED / ALLOWED_BY_DEFAULT / BLOCKED / NO_ROBOTS_TXT / etc.] | ✅ Confirmed (tested live) / ❌ Blocked by <product> (mismatch — declared open) / ❌ Blocked (declared, intentional) / ⚠️ Content differs for bots / 💰 Payment required (HTTP 402 — site monetizes AI access) / — Not tested (<reason>) | [Details] |
 | OAI-SearchBot | [...] | [...] | [...] | [Details] |
 | ChatGPT-User | [...] | [...] | [...] | [Details] |
 | ClaudeBot | [...] | [...] | [...] | [Details] |

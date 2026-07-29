@@ -394,6 +394,14 @@ Even Googlebot, which does execute JavaScript, deprioritizes JS-rendered content
 
 These checks surface emerging AI agent compatibility signals. None contribute to the numeric score — they produce a pass or a recommendation. The underlying standards are either IETF drafts or early-adoption features; penalizing absence would be unfair.
 
+Run the packaged probe for the full emerging-protocol surface instead of hand-checking endpoints:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> agentready
+```
+
+Render its `checks` (MCP server card, agents.json, api-catalog, OAuth discovery, Web Bot Auth directory, NLWeb, RSL) plus the robots `licensing` field as the non-scoring agent-readiness block — see `skills/geo-agentready/SKILL.md` for rendering rules (including the hedge rule for generic `/ask` and `/mcp` paths). Link-header and markdown-negotiation checks below remain part of this section.
+
 ### 9.1 RFC 8288 Link Headers (Service Discovery)
 
 RFC 8288 (Web Linking) defines the HTTP `Link:` response header. Servers can use it to advertise related resources — API catalog, service docs, MCP server card — in a machine-readable way, without HTML parsing.

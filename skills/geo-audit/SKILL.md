@@ -135,6 +135,7 @@ Delegate analysis to 5 specialized subagents. Each subagent operates on the coll
 - Verify meta tags, headers, and technical accessibility for AI systems
 - Check page speed, server-side rendering, and Core Web Vitals
 - Assess security headers and mobile optimization
+- Run the agent-readiness probe (`fetch_page.py <url> agentready`) and include its non-scoring emerging-protocol block (see `geo-agentready` skill)
 - (Crawler access is covered by Subagent 1's live probe — do not re-do static robots.txt parsing here.)
 
 **Subagent 4: Content E-E-A-T Quality (geo-content)**
