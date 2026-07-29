@@ -8,11 +8,39 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-29
+
+**Theme: truth refresh + report experience.** Corrects every factually-stale claim identified in the July 2026 gap analysis and introduces a mandatory report contract so audit output is readable and actionable for non-technical users.
+
 ### Added
 
-- **Bilingual (English + Hebrew) citability scoring** in [`scripts/citability_scorer.py`](scripts/citability_scorer.py). Each passage is language-detected by Hebrew-character density; Hebrew passages are scored with a Hebrew-tuned engine (gazetteer-based named-entity detection for titles/acronyms/quoted names, Hebrew definition/source/transition/uniqueness pattern packs, `₪`/`ש"ח` currency and `אחוז` percentage detection, niqqud stripping, and a recalibrated 90–120 word optimal-length band). All non-Hebrew content keeps using the original English engine unchanged. Same public functions, five dimensions, weights, and A–F grade bands, so cross-language scores stay comparable.
+- **Bilingual (English + Hebrew) citability scoring** in [`scripts/citability_scorer.py`](scripts/citability_scorer.py) (PR #26 by [@idoish](https://github.com/idoish)). Each passage is language-detected by Hebrew-character density; Hebrew passages are scored with a Hebrew-tuned engine (gazetteer-based named-entity detection for titles/acronyms/quoted names, Hebrew definition/source/transition/uniqueness pattern packs, `₪`/`ש"ח` currency and `אחוז` percentage detection, niqqud stripping, and a recalibrated 90–120 word optimal-length band). All non-Hebrew content keeps using the original English engine unchanged. Same public functions, five dimensions, weights, and A–F grade bands, so cross-language scores stay comparable.
 - **`language` field on `score_passage()` output** and **`language_distribution` on `analyze_page_citability()` output**.
 - **`tests/test_citability_scorer.py`** — 20 tests covering language detection, Hebrew normalisation, English-engine behaviour (unchanged), Hebrew named-entity/source/definition/currency/percentage/uniqueness signals, the recalibrated length band, and page-level `language_distribution`.
+- **Report contract** (`skills/geo/REPORT-CONTRACT.md`) — 11 rules adopted by geo-audit, geo-report, geo-report-pdf, and all subagent output formats: TL;DR-first, closed status legend (no more "Unverified"), Finding/Evidence/Impact/Fix/Confidence, executable fixes with owner+effort, per-language sections, evidence integrity, before/after rewrites, high-risk gate, YMYL schema guard. Manual eval scenarios in `evals/report-contract-scenarios.md`.
+- **2026 bot roster** — MistralAI-User, DuckAssistBot, Google-Agent, Google-CloudVertexBot, Google-NotebookLM, Google-GeminiNotebook (vendor renamed the NotebookLM fetcher; legacy token supported through Aug 2026), and Amazonbot added with vendor-verified UA tokens. New `status` field distinguishes active / retired (anthropic-ai, claude-web, FacebookBot) / opt-out tokens (Google-Extended, Applebot-Extended). Live probe covers active bots only and exposes `excluded_tokens`; robots parser derives from the same roster (split-brain fixed) and flags `stale_tokens`. DeepSeek/Grok honestly documented as unverifiable by UA.
+- **Freshness extraction** — `fetch_page.py page` returns `freshness` (dates from JSON-LD `@graph`-aware walk / `<time datetime>` / `Last-Modified`; tiers fresh / aging / stale / very-stale / **future-dated** (markup defect, with ≤1-day skew tolerance for naive-timezone markup) / unknown); scored in geo-content with a per-tier treatment table.
+- **Multilingual correctness** — brand_scanner checks Wikipedia/Wikidata in en+he by default (configurable per-language results); `--accept-language` flag on fetch_page (honored in `page` and `full` modes) so bilingual sites' non-English trees are auditable; geo-audit mandates per-language-tree audits with per-language scores.
+- Schema templates: `comparison-page.json` (comparison content ≈ the highest-value AI-cited type), `video-object.json`.
+
+### Changed
+
+- **llms.txt downgraded to informational** (no measured citation impact — 97% of llms.txt files never fetched, SE Ranking 300k-domain study); AI Visibility reweighted to Citability 40 / Brand 30 / Crawler Access 30.
+- **Platform guidance rewritten for the Google AI Mode era** — rank decoupling (only ~38% of AIO citations from top-10), query fan-out coverage check as the primary AIO lever, Google AI Mode as a distinct surface, Grok/DeepSeek platform notes, freshness (13-week window) as a universal action, 11–12% cross-platform citation overlap noted.
+- **Schema guidance** — three guardrails in skill + agent: YMYL credential gate, JS-injected-schema caveat (no more false "no structured data" on CMS sites), platform-nuanced claims (causal-ish for Google grounding, correlational elsewhere).
+- **E-E-A-T** — Sept 2025 Quality Rater Guidelines updates (AI-content assessment, YMYL expanded to Government/Civics); corrections/editorial-policy page scored for publishers.
+- Citability grade cuts in agent docs aligned to the scorer (A≥80 / B≥65 / C≥50 / D≥35); breakdown key names corrected (`uniqueness_signals`).
+- Stale "17 AI crawler" counts replaced with roster-derived phrasing across skills.
+
+### Fixed
+
+- **Wikimedia API calls were silently failing in production** — Wikimedia now returns 403 for browser-spoofed user agents (policy T400119), and both the Wikipedia and Wikidata checks swallowed the error, zeroing the 30-point Wikipedia brand signal for every brand. Now sends a descriptive `GEO-Reporter/0.4` UA.
+- Recommended robots.txt no longer includes the retired `anthropic-ai` token; now covers Claude-SearchBot / Claude-User / Perplexity-User / MistralAI-User / DuckAssistBot / Amazonbot / Meta-ExternalAgent.
+- `fetch_page.py` CLI no longer crashes with a traceback on malformed invocations (prints usage instead).
+
+### Contributors
+
+- [@idoish](https://github.com/idoish) — bilingual (Hebrew + English) citability scoring engine (PR #26)
 
 ## [0.3.5] — 2026-06-01
 
@@ -180,7 +208,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.0
 [0.3.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.5
 [0.3.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.4
 [0.3.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.3
