@@ -920,6 +920,8 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
               disguised block page)
             - body is non-trivially smaller AND content similarity to
               baseline is suspiciously low (silent content stripping)
+         - status 402 is classified separately as payment-required
+           (pay-per-crawl), neither blocked nor allowed
 
     Returns a dict structured for JSON consumption by skills. All
     failures are captured in result["errors"] rather than raised — this
@@ -944,6 +946,8 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
             for name, info in AI_CRAWLERS.items()
             if info.get("status", "active") != "active"
         },
+        # Bots that met an HTTP 402 pay-per-crawl toll rather than a block.
+        "payment_required_bots": [],
     }
 
     # Reject non-http(s) schemes before any network call. Mirrors the
@@ -1011,6 +1015,7 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
             "length": None,
             "similarity": None,
             "blocked": False,
+            "payment_required": False,
             "block_reason": None,
         }
         try:
@@ -1033,7 +1038,15 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         # Block detection rules in priority order. We record the first
         # rule that matches so the downstream skill can give a precise
         # explanation in its recommendations.
-        if bot_resp.status_code in (403, 406, 429, 503):
+        if bot_resp.status_code == 402:
+            # Pay-per-crawl (e.g. Cloudflare's 402 flow): the site is
+            # monetizing AI access, not blocking it. Classify distinctly —
+            # calling this "blocked" would produce a false CRITICAL
+            # mismatch finding; calling it "allowed" would hide the toll.
+            probe["payment_required"] = True
+            probe["block_reason"] = "payment-required (HTTP 402 — pay-per-crawl)"
+            result["payment_required_bots"].append(bot_name)
+        elif bot_resp.status_code in (403, 406, 429, 503):
             probe["blocked"] = True
             probe["block_reason"] = f"http_{bot_resp.status_code}"
         elif is_challenge_page(bot_html, bot_resp.status_code):
