@@ -8,6 +8,26 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-29
+
+**Theme: integrity & entity depth.** Detects GEO-spam and prompt-injection aimed at AI crawlers (a check no other tool in this niche runs), deepens the entity-graph audit, and adds two report-integrity guardrails. Everything new here is non-scoring — signals for review, not grade changes.
+
+### Added
+
+- **`geo-integrity` skill + `/geo integrity` command + `integrity` fetch mode** — static scan for content aimed at manipulating AI crawlers: CSS-hidden text (8+ words), LLM-directed instructions in HTML comments / `aria-hidden` / `data-*` attributes, invisible zero-width characters, and cloaked keyword-stuffed blocks. Conservative, high-confidence patterns only, with false-positive guards (icon spans, sr-only classes, short strings, stray characters all pass clean). Every finding is framed as a **signal for review, not proof of intent** (max Confidence: Likely); always quotes the offending text + location.
+- **sameAs liveness + `@id` extraction** (`check_sameas_liveness` in brand_scanner) — HEAD-checks every `sameAs` URL from structured data; broken entity-graph links (dead profiles, `href="#"`) surface as concrete findings. Renders in geo-brand-mentions.
+- **Profound source taxonomy** in geo-brand-mentions — classifies every brand mention as Owned / Competitor / Earned Media / PR Wire / Social / Institution, so a brand whose only "authority" is its own site + press wire reads as the thin corroboration it is.
+- **Informational negative signals** in the citability scorer — keyword stuffing (Princeton KDD-2024: ~-10% citation likelihood), CTA-in-body, boilerplate ratio, missing author. Reported as findings; **does not change any score** (per the release's informational-only design decision — the deterministic scoring contract and all prior tests are byte-for-byte unchanged).
+- **Report contract rules 12 & 13** — rule 12: an 8-point evaluator self-check before delivery (evidence on every Critical/High, score matches findings, no fabricated metrics, no YMYL schema without credentials, no duplicates, scope respected, specific fixes, high-risk code withheld). Rule 13: internal vs. external mode — third-party/competitor sites get "External Observation Only", a capped crawl, and **no /100 score**. Wired into geo-audit (Phase 1 ownership check + Phase 3 evaluator pass) and made the default for prospect/proposal audits.
+
+### Fixed
+
+- Report Contract preamble in four skills said "follow all 11 rules" while the contract had grown to 13 — an executor could have stopped before the evaluator pass and external-mode rules. Corrected to 13.
+
+### Tests
+
+- 53 new tests (integrity scanner, sameAs liveness, negative signals): **190 passing**. Two new eval scenarios (integrity framing, external-observation mode).
+
 ## [0.4.1] — 2026-07-29
 
 **Theme: agent readiness & licensing.** Detects the 2026 agent/licensing protocol surface as non-scoring signals, and classifies pay-per-crawl correctly (an HTTP 402 previously read as *allowed* in the live probe).
@@ -224,7 +244,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.2
 [0.4.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.0
 [0.3.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.3.5
