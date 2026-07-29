@@ -24,6 +24,7 @@ No other status labels are permitted. "Unverified" is banned.
 | ✅ Confirmed (tested live) | We made the request and observed success |
 | ❌ Blocked by <product> (mismatch — declared open) | robots.txt permits the bot but the WAF/CDN rejects it. CRITICAL |
 | ❌ Blocked (declared, intentional) | robots.txt blocks it; fine when it matches a stated posture |
+| 💰 Payment required (HTTP 402 — site monetizes AI access) | The site demands payment per crawl (e.g. Cloudflare pay-per-crawl). Not a block and not a misconfiguration — report as a monetization posture |
 | ⚠️ Content differs for bots | Bot receives a different body than a browser does |
 | — Not tested (<reason>) | e.g. "opt-out token — never fetches", "probe unavailable" |
 
