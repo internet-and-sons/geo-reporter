@@ -68,6 +68,20 @@ Round to the nearest integer. Cap at 100.
 
 The complete report follows this exact structure. Each section includes instructions on what to write and how.
 
+Body sections carry findings in Finding/Evidence/Impact/Fix/Confidence form (contract rule 3). Enumerative tables belong in the Appendix (rule 8). The TL;DR and Score Breakdown are the two exceptions.
+
+Every body finding renders in this shape:
+
+```markdown
+### [Finding title in plain language]
+**Evidence:** [what was observed, quoted]
+**Impact:** [reader terms; "no action needed" when true]
+**Fix:** [paste-ready artifact, or task + owner + effort]
+**Confidence:** [Confirmed | Likely | Hypothesis]
+```
+
+Omit **Fix** on no-action findings. Every status word inside Evidence comes from the contract's closed legend.
+
 ---
 
 ### Section 1: TL;DR
@@ -121,127 +135,242 @@ Then break down by component in a table:
 
 ### Section 4: AI Visibility Dashboard
 
-Present per-platform readiness scores:
+Open with one paragraph explaining what platform readiness means: "These scores reflect how likely your content is to be cited by each AI search platform. A score below 50 indicates significant barriers to citation on that platform."
+
+Then write **one finding per platform that is materially weak or materially strong** — not one per platform on the list. The full five-platform readiness matrix goes to the Appendix.
 
 ```markdown
 ## AI Visibility Dashboard
 
-| AI Platform | Readiness Score | Key Gap | Priority Action |
-|---|---|---|---|
-| Google AI Overviews | XX/100 | [One-line gap] | [One-line action] |
-| ChatGPT Web Search | XX/100 | [One-line gap] | [One-line action] |
-| Perplexity AI | XX/100 | [One-line gap] | [One-line action] |
-| Google Gemini | XX/100 | [One-line gap] | [One-line action] |
-| Bing Copilot | XX/100 | [One-line gap] | [One-line action] |
-```
+[Paragraph: what these scores mean. Range across platforms: XX–XX/100.
+Full per-platform matrix in Appendix → Raw Data Tables.]
 
-Add a brief paragraph explaining what these scores mean: "These scores reflect how likely your content is to be cited by each AI search platform. A score below 50 indicates significant barriers to citation on that platform."
+### [Platform] cannot currently cite your product pages
+**Evidence:** [Platform] readiness scored XX/100. [The specific observation that
+drove it — e.g. "Perplexity favours pages with a dated, sourced summary block;
+none of the 12 pages sampled carried a publication date."]
+**Impact:** [Platform] is where [reader's audience] asks [category] questions.
+At this score your pages are unlikely to surface in those answers.
+**Fix:** [Specific action] — Owner: [content/developer/marketing] · Effort: [hours/days]
+**Confidence:** [Confirmed | Likely | Hypothesis]
+
+### [Platform] readiness is already strong
+**Evidence:** [Platform] readiness scored XX/100; [observation supporting it].
+**Impact:** No action needed — hold this position.
+**Confidence:** Confirmed
+```
 
 ### Section 5: AI Crawler Access Status
 
-Present as a clear table. **Every value in the Status column must come from the report contract's closed legend** — no free-text statuses, and never "Unverified". Opt-out tokens that are never fetched (Google-Extended, Applebot-Extended) render as `— Not tested (opt-out token — never fetches)`, not as a pass or fail.
+The **full per-crawler probe matrix lives in the Appendix**, with the closed legend printed directly beneath it. The body carries one finding per *distinct crawler posture* observed — not one row per bot.
+
+**Every status word used anywhere — body or appendix — must come from the report contract's closed legend.** No free-text statuses, and never "Unverified". Opt-out tokens that are never fetched (Google-Extended, Applebot-Extended) render as `— Not tested (opt-out token — never fetches)`, not as a pass or fail.
 
 ```markdown
 ## AI Crawler Access
 
-| AI Crawler | Platform | Status | Impact | Recommendation |
-|---|---|---|---|---|
-| Googlebot | Google Search + AIO | ✅ Confirmed (tested live) | Critical | [Action] |
-| GPTBot | ChatGPT / OpenAI | ❌ Blocked by <product> (mismatch — declared open) | High | [Action] |
-| Bingbot | Bing + Copilot + ChatGPT | ✅ Confirmed (tested live) | High | [Action] |
-| PerplexityBot | Perplexity AI | ❌ Blocked (declared, intentional) | Medium | [Action] |
-| Google-Extended | Gemini Training | — Not tested (opt-out token — never fetches) | Medium | [Action] |
-| ClaudeBot | Anthropic Claude | ⚠️ Content differs for bots | Medium | [Action] |
-| Applebot-Extended | Apple Intelligence | — Not tested (opt-out token — never fetches) | Medium | [Action] |
-```
+[One-paragraph posture sentence: how many of the N crawlers probed reached your
+site, and whether that matches what your robots.txt declares. Full probe matrix
+in Appendix → Raw Data Tables.]
 
-Print the legend itself directly beneath the table so the client can decode every label without leaving the page.
+### ChatGPT's crawler is being turned away by your CDN
+**Evidence:** GPTBot received `❌ Blocked by Cloudflare (mismatch — declared open)`
+— HTTP 403 with a Cloudflare challenge body, while your robots.txt explicitly
+allows it. Googlebot on the same path returned `✅ Confirmed (tested live)`.
+**Impact:** ChatGPT cannot read the pages you intended to let it read. This is a
+misconfiguration, not a policy choice — you are blocked without meaning to be.
+**Fix:** Add GPTBot to the CDN bot-management allowlist. Owner: developer · Effort: minutes
+**Confidence:** Confirmed
+
+### Search and retrieval crawlers reach the site normally
+**Evidence:** Googlebot, Bingbot and PerplexityBot each returned
+`✅ Confirmed (tested live)` with bodies byte-identical to a browser fetch.
+**Impact:** No action needed — the platforms that matter most can read you.
+**Confidence:** Confirmed
+
+### Training opt-out tokens are declared, and that is a deliberate posture
+**Evidence:** Google-Extended and Applebot-Extended render as
+`— Not tested (opt-out token — never fetches)`; robots.txt disallows both.
+**Impact:** No action needed. Blocking training while allowing retrieval is the
+standard publisher posture — it does not reduce your citation chances.
+**Confidence:** Confirmed
+```
 
 **Translate for the client**: "Blocking AI crawlers is like closing your store during business hours. If a crawler cannot access your site, the AI platform it powers cannot cite your content. We recommend allowing all major AI crawlers unless you have a specific data licensing concern."
 
+Per contract rule 10, if the fix involves editing robots.txt, describe the change and its consequences in plain language first, and only render the code block after the client confirms they want it.
+
 ### Section 6: Brand Authority Analysis
 
-Present entity presence across platforms:
+The **full platform-presence table goes to the Appendix**. The body carries findings for the entity gaps that actually move citation probability — highest-weight platforms first (Wikipedia and Reddit dominate ChatGPT and Perplexity citations respectively).
 
 ```markdown
 ## Brand Authority
 
-| Platform | Presence | Status | Impact on AI Visibility |
-|---|---|---|---|
-| Wikipedia | Yes/No | [Detail] | Very High — 47.9% of ChatGPT citations are Wikipedia |
-| Wikidata | Yes/No | [Detail] | High — machine-readable entity data |
-| LinkedIn | Yes/No | [Detail] | High — Bing Copilot and ChatGPT signal |
-| YouTube | Yes/No | [Detail] | High — Gemini and Perplexity signal |
-| Reddit | Yes/No | [Detail] | Very High — 46.7% of Perplexity citations are Reddit |
-| Google Knowledge Panel | Yes/No | [Detail] | High — Gemini entity recognition |
-| Crunchbase | Yes/No | [Detail] | Medium — entity validation |
-| GitHub | Yes/No | [Detail] | Medium — tech brand signal |
+[One paragraph: how many of the N authority platforms carry an accurate presence,
+and which single gap costs the most. Full presence table in Appendix → Raw Data Tables.]
+
+### Your brand has no machine-readable entity record
+**Evidence:** No Wikidata item and no Wikipedia article resolve for "[Brand]".
+The Organization schema on the homepage carries [N] `sameAs` links, none of
+which point to an encyclopedic or registry source.
+**Impact:** Wikipedia accounts for roughly 47.9% of ChatGPT's citations. Without
+an anchored entity record, AI systems have no authoritative way to confirm your
+brand is the entity being asked about, so they cite a competitor that does.
+**Fix:** Create a Wikidata item with founding date, industry, and official URL,
+then add it to `sameAs`. Owner: marketing · Effort: hours
+**Confidence:** Confirmed
+
+### Community presence is thin on the platform Perplexity trusts most
+**Evidence:** [N] Reddit mentions of "[Brand]" across [subreddits sampled];
+[characterization — e.g. "none in the last 12 months"].
+**Impact:** Reddit accounts for roughly 46.7% of Perplexity's citations.
+**Fix:** [Specific engagement plan] — Owner: marketing · Effort: weeks (ongoing)
+**Confidence:** Likely
+
+### Established profiles are consistent
+**Evidence:** LinkedIn, YouTube and Crunchbase profiles all resolve and list the
+same legal name, founding year and URL as the homepage schema.
+**Impact:** No action needed — cross-platform consistency is already working for you.
+**Confidence:** Confirmed
 ```
 
 **Translate for the client**: "AI platforms build trust by cross-referencing your brand across multiple authoritative sources. Each platform where your brand has an accurate, consistent presence increases the likelihood of being cited in AI answers."
 
 ### Section 7: Citability Analysis
 
-#### Top 5 Most Citable Pages
-For each page:
-- URL
-- Why it is citable (structure, depth, E-E-A-T signals)
-- One specific improvement that would make it even more citable
+The **per-page citability score table goes to the Appendix**. The body carries findings about the *patterns* those scores reveal — a reader does not act on a list of twelve scores, they act on "your product pages all bury the answer".
 
-#### Top 5 Least Citable Pages
-For each page:
-- URL
-- Why it is unlikely to be cited (thin content, poor structure, missing signals)
-- Specific rewrite or restructure recommendation
+Write one finding per pattern, covering both the strongest and weakest ends of the range. Because these are content rewrites, contract rule 6 applies: each rewrite finding shows the current passage, the rewritten citable version, and one line on why the rewrite wins.
 
-**Business impact framing**: "Your most citable pages are your best candidates for appearing in AI-generated answers. Improving the 5 least citable pages represents the highest-ROI content investment you can make for AI visibility."
+```markdown
+## Citability Analysis
+
+[One paragraph: citability range across the N pages scored, and the single
+pattern that separates the top from the bottom. Per-page scores in
+Appendix → Raw Data Tables.]
+
+### Your highest-value pages bury the answer below the fold
+**Evidence:** [N] of [N] product pages open with brand narrative; the first
+direct answer to the page's own title question appears at paragraph [N].
+On `/[path]` the opening line reads: "[quoted current passage]".
+**Impact:** AI systems extract answers from the first self-contained passage
+they can lift. Pages that make them read 400 words first get skipped in favour
+of a competitor who answered in the first sentence.
+**Fix:** Lead each page with a 40–60 word direct answer.
+
+*Current:* "[quoted current passage]"
+*Rewritten:* "[the citable version — direct, self-contained, specific]"
+*Why it wins:* Answers the title question in one liftable sentence, with a
+concrete figure an AI system can attribute.
+
+Owner: content · Effort: days
+**Confidence:** Confirmed
+
+### Your guide pages are already highly citable
+**Evidence:** `/[path]` scored XX/100 — question-form H2s, dated, bylined to a
+named author with credentials, and each section answers in its first sentence.
+**Impact:** No action needed. This page is your template — apply its structure
+to the pages above.
+**Confidence:** Confirmed
+```
+
+**Business impact framing**: "Your most citable pages are your best candidates for appearing in AI-generated answers. Improving the least citable pages represents the highest-ROI content investment you can make for AI visibility."
 
 ### Section 8: Technical Health Summary
 
-Present the key technical findings in business-friendly language:
+The **full technical checklist goes to the Appendix**. The body carries a finding for each area that needs work, plus one consolidated no-action finding for the areas that are already healthy. Order by severity — rendering first, then anything blocking crawl, then performance.
+
+Per contract rule 4: any check that did not run renders as "[metric] not measured — [what would measure it]". Never a guessed value.
 
 ```markdown
 ## Technical Health
 
-| Area | Status | Business Impact |
-|---|---|---|
-| Core Web Vitals | Good/Needs Work/Poor | [Impact on user experience and rankings] |
-| Server-Side Rendering | Yes/Partial/No | [Impact on AI crawler visibility] |
-| Mobile Optimization | Good/Needs Work/Poor | [Impact on Google's mobile-first indexing] |
-| Security (HTTPS + Headers) | Good/Needs Work/Poor | [Impact on trust signals] |
-| Page Speed | Fast/Average/Slow | [Impact on user experience and crawl budget] |
-| IndexNow Protocol | Implemented/Not | [Impact on Bing/ChatGPT indexing speed] |
+[One paragraph: how many of the N technical checks passed, and the one that
+matters most. Full checklist in Appendix → Raw Data Tables.]
+
+### AI crawlers see an empty page
+**Evidence:** The server HTML for `/[path]` contains [N] words of body copy; the
+same URL rendered with JavaScript contains [N]. Product copy, headings and
+schema all appear only after JS execution.
+**Impact:** This is the single most impactful technical issue for AI search
+visibility. Most AI platforms do not execute JavaScript, so they receive a shell
+with nothing to cite. Until this is resolved they cannot cite your content at all.
+**Fix:** Enable server-side rendering or static pre-rendering for all indexable
+routes. Owner: developer · Effort: days
+**Confidence:** Confirmed
+
+### Pages load slowly enough to affect ranking and crawl budget
+**Evidence:** LCP [X.X]s and INP [XXX]ms on [page], measured via [tool] on [date]
+— above the [2.5s / 200ms] thresholds.
+**Impact:** [Reader-terms consequence.]
+**Fix:** [Named change — e.g. "compress the four hero images on /"] —
+Owner: developer · Effort: hours
+**Confidence:** Confirmed
+
+### HTTPS, mobile rendering and security headers are all sound
+**Evidence:** Valid certificate, HSTS present, responsive viewport declared, and
+mobile and desktop HTML match.
+**Impact:** No action needed.
+**Confidence:** Confirmed
 ```
 
-**Critical finding callout**: If SSR is missing or partial, highlight this prominently: "Your site uses client-side rendering, which means AI crawlers see an empty page when they visit. This is the single most impactful technical issue for AI search visibility. Until this is resolved, most AI platforms cannot cite your content."
-
 ### Section 9: Schema & Structured Data
+
+The **complete schema inventory goes to the Appendix**. The body carries a finding per missing or broken schema, each shipping the paste-ready JSON-LD as its Fix (contract rule 5).
+
+Two guards apply. Contract rule 11: never recommend `LegalService`, `MedicalWebPage`, `Physician`, `MedicalClinic` or `FinancialProduct` unless the report verifies the site displays the matching real-world credential — otherwise recommend `Organization` / `ProfessionalService` and say why. And if `structured_data` came back empty but the page shows CMS markers, report "no server-rendered structured data; client-side injection possible", not "no structured data".
 
 ```markdown
 ## Schema & Structured Data
 
-### Current Implementation
-| Schema Type | Present | Status | AI Impact |
-|---|---|---|---|
-| Organization | Yes/No | [Valid/Issues] | Critical — entity recognition |
-| Article + Author | Yes/No | [Valid/Issues] | High — E-E-A-T signal |
-| sameAs (entity links) | Yes/No | [Count] links | Critical — cross-platform entity graph |
-| [Business-specific] | Yes/No | [Valid/Issues] | [Impact] |
-| WebSite + SearchAction | Yes/No | [Valid/Issues] | Medium — sitelinks |
-| BreadcrumbList | Yes/No | [Valid/Issues] | Low-Medium — navigation context |
+[One paragraph: which schema types are present and valid, which are missing.
+Full inventory in Appendix → Raw Data Tables.]
+
+### Your Organization schema does not link out to any other profile
+**Evidence:** The homepage Organization block is valid JSON-LD and server-rendered,
+but carries no `sameAs` property. [N] verified profiles exist off-site.
+**Impact:** `sameAs` is how an AI system confirms the company on your site is the
+same company it has seen on LinkedIn, Wikidata and Crunchbase. Without it, each
+mention is a separate unverified entity and none of them accumulate trust.
+**Fix:** Add to the existing Organization block in `<head>`:
+
+```json
+"sameAs": [
+  "https://www.linkedin.com/company/...",
+  "https://www.wikidata.org/wiki/Q..."
+]
 ```
 
-If schemas are missing, note: "Ready-to-use structured data code has been prepared and is included in the technical appendix. Your development team can add this to your site with minimal effort."
+Owner: developer · Effort: minutes
+**Confidence:** Confirmed
+
+### Articles carry no author entity
+**Evidence:** [N] of [N] blog posts have Article schema; none include a `author`
+Person node with `sameAs` or `knowsAbout`.
+**Impact:** Author credentials are the strongest E-E-A-T signal available to AI
+systems. Anonymous articles are discounted against bylined competitors.
+**Fix:** [Paste-ready Person node, adapted from the `article-author` template.]
+Owner: developer · Effort: hours
+**Confidence:** Confirmed
+```
+
+Where a schema is missing entirely, adapt the matching bundled template from `schema/` (see geo-schema) and paste the filled result into the Fix — never a template with `REPLACE:` markers or `YOURDOMAIN.com` left in it.
 
 ### Section 10: llms.txt Status
 
 ```markdown
 ## llms.txt — AI Content Guide
 
-| File | Status | Recommendation |
-|---|---|---|
-| /llms.txt | Present/Missing | [Action] |
-| /llms-full.txt | Present/Missing | [Action] |
+### No AI content guide is published
+**Evidence:** `https://[domain]/llms.txt` and `/llms-full.txt` both return HTTP 404.
+**Impact:** llms.txt is an emerging standard, not yet universally read, so its
+absence costs nothing today — but publishing one is cheap and puts you ahead of
+competitors as adoption grows.
+**Fix:** [Paste-ready llms.txt, generated from the site's own structure — title,
+one-line description, and the 10–20 pages you most want cited.]
+Owner: developer · Effort: minutes
+**Confidence:** Confirmed
 ```
 
 **Translate for the client**: "llms.txt is an emerging standard (similar to robots.txt) that tells AI systems what your site is about and which pages are most important. While not universally adopted yet, implementing it positions your brand ahead of competitors and provides direct guidance to AI platforms."
@@ -319,27 +448,28 @@ Use conservative estimates. Base the dollar figure on:
 
 ### Section 12: Competitor Comparison (if competitor URLs provided)
 
-If competitor URLs were analyzed alongside the primary domain:
+If competitor URLs were analyzed alongside the primary domain. Per contract rule 13, competitor sites are **External Observation Only** — present observations, never a /100 grade for a site you do not own. The **full side-by-side metric matrix goes to the Appendix**; the body carries findings on the gaps that matter.
 
 ```markdown
 ## Competitor Comparison
 
-| Metric | [Your Brand] | [Competitor 1] | [Competitor 2] |
-|---|---|---|---|
-| Overall GEO Score | XX/100 | XX/100 | XX/100 |
-| Google AIO Readiness | XX/100 | XX/100 | XX/100 |
-| ChatGPT Readiness | XX/100 | XX/100 | XX/100 |
-| Perplexity Readiness | XX/100 | XX/100 | XX/100 |
-| Schema Coverage | [Detail] | [Detail] | [Detail] |
-| Wikipedia Presence | Yes/No | Yes/No | Yes/No |
-| Reddit Authority | [Detail] | [Detail] | [Detail] |
-| SSR Status | Yes/No | Yes/No | Yes/No |
+[One paragraph: who was compared and on what basis. Full matrix in
+Appendix → Raw Data Tables. Competitor observations are external-only — no scores.]
 
-### Where You Lead
-[Specific areas where the brand outperforms competitors]
+### A competitor owns the entity record you are missing
+**Evidence:** [Competitor] resolves to a Wikidata item and a Google Knowledge
+Panel; [Brand] resolves to neither.
+**Impact:** When an AI system is asked "who are the leading [category] providers",
+[Competitor] is a confirmable entity and you are an unconfirmed string.
+**Fix:** [Named action] — Owner: marketing · Effort: [hours/weeks]
+**Confidence:** Confirmed
 
-### Where You Trail
-[Specific areas where competitors have an advantage, with actions to close the gap]
+### You lead on crawler access
+**Evidence:** All [N] probed AI crawlers returned `✅ Confirmed (tested live)` on
+[Brand]; [Competitor] returned `❌ Blocked (declared, intentional)` for GPTBot
+and PerplexityBot.
+**Impact:** No action needed — this is a real, defensible advantage. Hold it.
+**Confidence:** Confirmed
 ```
 
 ### Section 13: Appendix
@@ -348,9 +478,95 @@ If competitor URLs were analyzed alongside the primary domain:
 ## Appendix
 
 ### Raw Data Tables
-Every table longer than 6 rows lives here — full crawler probe results, per-page
-citability scores, complete schema inventory, full platform matrices. The body
-sections above reference these by name rather than reproducing them.
+
+Every enumerative table lives here — the body sections above reference these by
+name rather than reproducing them. Reproduce each table in full; the body is
+narrative, the appendix is the record. Status labels stay inside the contract's
+closed legend here too.
+
+#### A1. AI Platform Readiness Matrix
+| AI Platform | Readiness Score | Key Gap | Priority Action |
+|---|---|---|---|
+| Google AI Overviews | XX/100 | [One-line gap] | [One-line action] |
+| ChatGPT Web Search | XX/100 | [One-line gap] | [One-line action] |
+| Perplexity AI | XX/100 | [One-line gap] | [One-line action] |
+| Google Gemini | XX/100 | [One-line gap] | [One-line action] |
+| Bing Copilot | XX/100 | [One-line gap] | [One-line action] |
+
+#### A2. AI Crawler Probe Results
+| AI Crawler | Platform | Status | Impact | Recommendation |
+|---|---|---|---|---|
+| Googlebot | Google Search + AIO | ✅ Confirmed (tested live) | Critical | [Action] |
+| GPTBot | ChatGPT / OpenAI | ❌ Blocked by <product> (mismatch — declared open) | High | [Action] |
+| Bingbot | Bing + Copilot + ChatGPT | ✅ Confirmed (tested live) | High | [Action] |
+| PerplexityBot | Perplexity AI | ❌ Blocked (declared, intentional) | Medium | [Action] |
+| Google-Extended | Gemini Training | — Not tested (opt-out token — never fetches) | Medium | [Action] |
+| ClaudeBot | Anthropic Claude | ⚠️ Content differs for bots | Medium | [Action] |
+| Applebot-Extended | Apple Intelligence | — Not tested (opt-out token — never fetches) | Medium | [Action] |
+
+Print the report contract's status legend directly beneath this table so the
+client can decode every label without leaving the page.
+
+#### A3. Brand Presence by Platform
+| Platform | Presence | Status | Impact on AI Visibility |
+|---|---|---|---|
+| Wikipedia | Yes/No | [Detail] | Very High — 47.9% of ChatGPT citations are Wikipedia |
+| Wikidata | Yes/No | [Detail] | High — machine-readable entity data |
+| LinkedIn | Yes/No | [Detail] | High — Bing Copilot and ChatGPT signal |
+| YouTube | Yes/No | [Detail] | High — Gemini and Perplexity signal |
+| Reddit | Yes/No | [Detail] | Very High — 46.7% of Perplexity citations are Reddit |
+| Google Knowledge Panel | Yes/No | [Detail] | High — Gemini entity recognition |
+| Crunchbase | Yes/No | [Detail] | Medium — entity validation |
+| GitHub | Yes/No | [Detail] | Medium — tech brand signal |
+
+#### A4. Per-Page Citability Scores
+| URL | Citability | Strongest signal | Weakest signal |
+|---|---|---|---|
+| [absolute URL] | XX/100 | [signal] | [signal] |
+
+List every page scored, ranked high to low.
+
+#### A5. Technical Checklist
+| Area | Status | Business Impact |
+|---|---|---|
+| Core Web Vitals | Good/Needs Work/Poor | [Impact on user experience and rankings] |
+| Server-Side Rendering | Yes/Partial/No | [Impact on AI crawler visibility] |
+| Mobile Optimization | Good/Needs Work/Poor | [Impact on Google's mobile-first indexing] |
+| Security (HTTPS + Headers) | Good/Needs Work/Poor | [Impact on trust signals] |
+| Page Speed | Fast/Average/Slow | [Impact on user experience and crawl budget] |
+| IndexNow Protocol | Implemented/Not | [Impact on Bing/ChatGPT indexing speed] |
+
+Any check that did not run renders as "[metric] not measured — [what would
+measure it]" (contract rule 4).
+
+#### A6. Schema Inventory
+| Schema Type | Present | Status | AI Impact |
+|---|---|---|---|
+| Organization | Yes/No | [Valid/Issues] | Critical — entity recognition |
+| Article + Author | Yes/No | [Valid/Issues] | High — E-E-A-T signal |
+| sameAs (entity links) | Yes/No | [Count] links | Critical — cross-platform entity graph |
+| [Business-specific] | Yes/No | [Valid/Issues] | [Impact] |
+| WebSite + SearchAction | Yes/No | [Valid/Issues] | Medium — sitelinks |
+| BreadcrumbList | Yes/No | [Valid/Issues] | Low-Medium — navigation context |
+
+#### A7. llms.txt Status
+| File | Status | Recommendation |
+|---|---|---|
+| /llms.txt | Present/Missing | [Action] |
+| /llms-full.txt | Present/Missing | [Action] |
+
+#### A8. Competitor Matrix *(only if competitor URLs were analyzed)*
+| Metric | [Your Brand] | [Competitor 1] | [Competitor 2] |
+|---|---|---|---|
+| Google AIO Readiness | XX/100 | [observation] | [observation] |
+| ChatGPT Readiness | XX/100 | [observation] | [observation] |
+| Perplexity Readiness | XX/100 | [observation] | [observation] |
+| Schema Coverage | [Detail] | [Detail] | [Detail] |
+| Wikipedia Presence | Yes/No | Yes/No | Yes/No |
+| Reddit Authority | [Detail] | [Detail] | [Detail] |
+| SSR Status | Yes/No | Yes/No | Yes/No |
+
+Competitor columns carry observations, not /100 scores (contract rule 13).
 
 ### Methodology
 This GEO audit was conducted using the following methodology:
@@ -394,7 +610,7 @@ This GEO audit was conducted using the following methodology:
 ## Formatting and Tone Guidelines
 
 ### Formatting
-- Move any table longer than 6 rows to the appendix; the body carries findings in Finding/Evidence/Impact/Fix/Confidence format.
+- Move enumerative tables to the appendix; the body carries findings in Finding/Evidence/Impact/Fix/Confidence format. The TL;DR and the Score Breakdown are the only body blocks exempt from this.
 - Use clean markdown throughout: tables, headers (H2/H3), bullet points, bold for emphasis
 - Tables for data, bullets for recommendations, bold for key terms
 - One blank line between sections for readability

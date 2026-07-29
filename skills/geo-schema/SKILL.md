@@ -264,6 +264,25 @@ Based on the detected business type, generate ready-to-paste JSON-LD blocks. Alw
 - Include `speakable` on Article schemas with CSS selectors pointing to key content sections
 - Place JSON-LD in `<head>` section — NOT injected via JavaScript
 
+## Bundled JSON-LD templates
+
+Ready-to-adapt templates ship with the plugin. Read one with:
+
+`"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/schema/<name>.json"`
+
+| Template | Use it for |
+|---|---|
+| `organization` | Any business site — the base entity node; carries `sameAs`, `foundingDate`, `knowsAbout` |
+| `local-business` | Businesses with a physical location (extends Organization: address, hours, geo) |
+| `article-author` | Publishers — Article + Person author with credentials (strongest E-E-A-T signal) |
+| `product-ecommerce` | Product pages — Product + Offer with price/availability |
+| `software-saas` | SaaS — SoftwareApplication with offers and applicationCategory |
+| `website-searchaction` | Site-level WebSite node + SearchAction |
+| `comparison-page` | Comparison / "best X" listicles — ItemList of Products. Comparison content is among the most-cited formats in AI answers, so this is high-leverage for publishers and affiliates |
+| `video-object` | Pages embedding video — VideoObject for multimodal signal |
+
+Every template carries placeholders the agent must fill from the audited site — either `REPLACE:` markers (`comparison-page`, `video-object`) or ALL-CAPS tokens and `YOURDOMAIN.com` (the rest). Never emit a template with `REPLACE:` text, an ALL-CAPS token, or `YOURDOMAIN.com` left in it. Apply the YMYL gate (guardrail 1) before recommending any credentialed type.
+
 ### Template: Organization with Full GEO Signals
 ```json
 {
