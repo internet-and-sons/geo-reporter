@@ -81,6 +81,8 @@ After running a full `/geo-audit`, collect all scores, findings, and recommendat
 
 The JSON's executive-summary field must contain the TL;DR (score, top-3 actions with impact/effort/owner, one-sentence posture) — the PDF cover page renders it verbatim, so write it for a non-technical reader. Keep it under 150 words. Every value in `crawler_access[*].status` must come from the report contract's closed status legend — never "Unverified".
 
+Each `findings[*]` entry maps onto the contract's Finding format (rule 3): `title` carries the one-sentence Finding, and `description` carries Evidence/Impact/Fix/Confidence. Write `description` as a single flowing paragraph with `**Evidence:**`, `**Impact:**`, `**Fix:**` and `**Confidence:**` as inline bold labels — the generator converts `**bold**` to bold text, but line breaks inside a field collapse, so do not rely on one label per line the way the markdown report does.
+
 ### Step 2: Write JSON Data to a Temp File
 
 Write the collected audit data to a temporary JSON file:

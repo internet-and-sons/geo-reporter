@@ -281,7 +281,7 @@ Ready-to-adapt templates ship with the plugin. Read one with:
 | `comparison-page` | Comparison / "best X" listicles — ItemList of Products. Comparison content is among the most-cited formats in AI answers, so this is high-leverage for publishers and affiliates |
 | `video-object` | Pages embedding video — VideoObject for multimodal signal |
 
-Every template carries placeholders the agent must fill from the audited site — either `REPLACE:` markers (`comparison-page`, `video-object`) or ALL-CAPS tokens and `YOURDOMAIN.com` (the rest). Never emit a template with `REPLACE:` text, an ALL-CAPS token, or `YOURDOMAIN.com` left in it. Apply the YMYL gate (guardrail 1) before recommending any credentialed type.
+Templates use ALL-CAPS placeholder tokens (`YOUR_ORGANIZATION_NAME`, `YOURDOMAIN.com`, `YYYY-MM-DD`) for every value the agent must fill from the audited site. Never emit a template with a placeholder token left in it. Apply the YMYL gate (guardrail 1) before recommending any credentialed type.
 
 ### Template: Organization with Full GEO Signals
 ```json

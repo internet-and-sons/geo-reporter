@@ -355,7 +355,7 @@ Owner: developer · Effort: hours
 **Confidence:** Confirmed
 ```
 
-Where a schema is missing entirely, adapt the matching bundled template from `schema/` (see geo-schema) and paste the filled result into the Fix — never a template with `REPLACE:` markers or `YOURDOMAIN.com` left in it.
+Where a schema is missing entirely, adapt the matching bundled template from `schema/` (see geo-schema) and paste the filled result into the Fix — never a template with an ALL-CAPS placeholder token (`YOUR_ORGANIZATION_NAME`, `YOURDOMAIN.com`) left in it.
 
 ### Section 10: llms.txt Status
 
