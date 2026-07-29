@@ -14,7 +14,7 @@ from urllib.parse import urljoin, urlparse
 
 try:
     import requests
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup, Comment
 except ImportError:
     print("ERROR: Required packages not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
@@ -1278,12 +1278,246 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Content-integrity scanner (GEO-spam / prompt-injection detection)
+# ---------------------------------------------------------------------------
+#
+# CONSERVATIVE by design. Static analysis cannot tell an intentional spam
+# injection from a plugin quirk or a legitimate edge case, so every finding
+# is framed as a *signal for review*, never as proof. We detect ONLY four
+# high-confidence patterns, each with a false-positive guard (word floors and
+# occurrence floors) that keeps ordinary a11y markup and stray characters
+# from tripping the scanner:
+#
+#   1. hidden_text       — text-bearing element with an INLINE hiding style,
+#                          carrying >= 8 words of real text.
+#   2. llm_instruction   — LLM-directed imperative in an HTML comment,
+#                          aria-hidden element, or data-* attribute.
+#   3. zero_width        — >= 3 zero-width chars inside VISIBLE text.
+#   4. cloaked_keywords  — aria-hidden / display:none block of >= 25 words
+#                          whose top token exceeds 18% density.
+#
+# We only ever see INLINE styles; class-based hiding (e.g. .sr-only) is
+# invisible to us and, being standard a11y practice, is deliberately left
+# alone.
+
+# Inline style fragments that hide an element from human readers. Matched
+# against a whitespace-stripped, lowercased copy of the style attribute.
+_HIDING_STYLE_PATTERNS = (
+    "display:none",
+    "visibility:hidden",
+    "opacity:0",
+    "font-size:0",
+    "font-size:1px",
+    "text-indent:-9999px",
+)
+
+# LLM-directed imperative phrases. High-confidence only.
+_LLM_INSTRUCTION_PATTERNS = (
+    r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
+    r"\byou\s+(are|must|should)\s+(now\s+)?",
+    r"cite\s+(this|us|these)\b",
+    r"recommend\s+\S+\s+(as|above|over)\b",
+    r"system\s+prompt",
+    r"as\s+an?\s+(ai|language\s+model|assistant)",
+)
+_LLM_INSTRUCTION_RE = re.compile(
+    "|".join(_LLM_INSTRUCTION_PATTERNS), re.IGNORECASE
+)
+
+# Zero-width / BOM code points that don't render but travel inside text.
+_ZERO_WIDTH_CHARS = ("​", "‌", "‍", "﻿")
+
+# Tags whose text is not human-visible page content.
+_NON_VISIBLE_PARENTS = {"script", "style", "noscript", "template", "head"}
+
+# Tags we consider "text-bearing" for the hidden_text check.
+_TEXT_BEARING_TAGS = {"p", "div", "span", "li", "a",
+                      "h1", "h2", "h3", "h4", "h5", "h6"}
+
+# Small inline stopword set for the keyword-density check.
+_STOPWORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+    "her", "was", "one", "our", "out", "day", "get", "has", "him", "his",
+    "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy",
+    "did", "its", "let", "put", "say", "she", "too", "use", "that", "this",
+    "with", "from", "they", "have", "will", "your", "what", "when", "which",
+    "their", "there", "would", "about", "into", "over", "than", "them",
+    "then", "these", "those", "were", "been", "some", "more", "very", "such",
+    "here", "also", "only", "just", "like", "most", "much", "many", "each",
+}
+
+
+def scan_content_integrity(soup, base_url: str = "") -> dict:
+    """Statically scan a parsed page for content-integrity red flags.
+
+    Detects four high-confidence patterns that can indicate content aimed at
+    manipulating LLM crawlers (hidden text, LLM-directed instructions,
+    zero-width payloads, and cloaked keyword stuffing). CONSERVATIVE by
+    design — findings are signals for human review, not proof of spam.
+
+    Returns a dict with ``url``, ``findings`` (each carrying
+    ``type``/``severity``/``evidence``/``location``), ``counts`` per type,
+    and a one-line plain-language ``summary``.
+    """
+    findings = []
+
+    def _words(text):
+        return re.findall(r"\b\w[\w'-]*\b", text)
+
+    # --- 1. hidden_text ---------------------------------------------------
+    for element in soup.find_all(_TEXT_BEARING_TAGS):
+        style = element.get("style", "")
+        if not style:
+            continue
+        squashed = re.sub(r"\s+", "", style).lower()
+        matched = next(
+            (p for p in _HIDING_STYLE_PATTERNS if p in squashed), None
+        )
+        if not matched:
+            continue
+        text = element.get_text(" ", strip=True)
+        words = _words(text)
+        if len(words) < 8:
+            continue  # word-floor guard: icons / single hidden words are fine
+        evidence = " ".join(words[:15])
+        findings.append({
+            "type": "hidden_text",
+            "severity": "high",
+            "evidence": evidence,
+            "location": f"<{element.name}> style: {matched}",
+        })
+
+    # --- 2. llm_instruction ----------------------------------------------
+    def _record_instruction(text, location):
+        if not text:
+            return
+        m = _LLM_INSTRUCTION_RE.search(text)
+        if not m:
+            return
+        snippet = text.strip()
+        if len(snippet) > 120:
+            snippet = snippet[:120].rstrip() + "..."
+        findings.append({
+            "type": "llm_instruction",
+            "severity": "high",
+            "evidence": snippet,
+            "location": location,
+        })
+
+    # (a) HTML comments
+    for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
+        _record_instruction(str(comment), "html comment")
+
+    # (b) aria-hidden="true" elements
+    for element in soup.find_all(attrs={"aria-hidden": "true"}):
+        _record_instruction(element.get_text(" ", strip=True),
+                            "aria-hidden element")
+
+    # (c) any data-* attribute value
+    for element in soup.find_all(True):
+        for attr, value in element.attrs.items():
+            if not attr.startswith("data-"):
+                continue
+            if isinstance(value, (list, tuple)):
+                value = " ".join(value)
+            _record_instruction(str(value), "data-attribute")
+
+    # --- 3. zero_width ----------------------------------------------------
+    # Count zero-width chars per visible text node, tally per element.
+    zw_by_element = {}
+    for node in soup.find_all(string=True):
+        parent = node.parent
+        if parent is not None and parent.name in _NON_VISIBLE_PARENTS:
+            continue
+        if isinstance(node, Comment):
+            continue
+        count = sum(str(node).count(ch) for ch in _ZERO_WIDTH_CHARS)
+        if count:
+            key = parent if parent is not None else node
+            zw_by_element[key] = zw_by_element.get(key, 0) + count
+
+    total_zw = sum(zw_by_element.values())
+    if total_zw >= 3:  # occurrence-floor guard: single strays are innocuous
+        # Attribute to the element with the most occurrences for evidence.
+        top_el = max(zw_by_element, key=zw_by_element.get)
+        tag = getattr(top_el, "name", "text") or "text"
+        findings.append({
+            "type": "zero_width",
+            "severity": "medium",
+            "evidence": f"<{tag}> contains {total_zw} zero-width characters",
+            "location": f"<{tag}>",
+        })
+
+    # --- 4. cloaked_keywords ---------------------------------------------
+    # aria-hidden OR inline display:none blocks with >= 25 words whose single
+    # most-frequent meaningful token exceeds 18% density.
+    seen_cloak = set()
+    cloak_candidates = list(soup.find_all(attrs={"aria-hidden": "true"}))
+    for element in soup.find_all(style=True):
+        squashed = re.sub(r"\s+", "", element.get("style", "")).lower()
+        if "display:none" in squashed:
+            cloak_candidates.append(element)
+
+    for element in cloak_candidates:
+        if id(element) in seen_cloak:
+            continue
+        seen_cloak.add(id(element))
+        text = element.get_text(" ", strip=True)
+        tokens = [t.lower() for t in _words(text)]
+        if len(tokens) < 25:
+            continue  # word-floor guard
+        meaningful = [t for t in tokens if len(t) >= 4 and t not in _STOPWORDS]
+        if not meaningful:
+            continue
+        counts = {}
+        for t in meaningful:
+            counts[t] = counts.get(t, 0) + 1
+        top_token = max(counts, key=counts.get)
+        ratio = counts[top_token] / len(tokens)
+        if ratio <= 0.18:  # density guard
+            continue
+        findings.append({
+            "type": "cloaked_keywords",
+            "severity": "medium",
+            "evidence": f"'{top_token}' is {ratio:.0%} of tokens",
+            "location": f"<{element.name}>",
+        })
+
+    counts = {
+        "hidden_text": sum(1 for f in findings if f["type"] == "hidden_text"),
+        "llm_instruction": sum(
+            1 for f in findings if f["type"] == "llm_instruction"),
+        "zero_width": sum(1 for f in findings if f["type"] == "zero_width"),
+        "cloaked_keywords": sum(
+            1 for f in findings if f["type"] == "cloaked_keywords"),
+    }
+    total = len(findings)
+    if total == 0:
+        summary = "No content-integrity signals detected."
+    else:
+        parts = [f"{n} {name.replace('_', ' ')}"
+                 for name, n in counts.items() if n]
+        summary = (
+            f"{total} content-integrity signal{'s' if total != 1 else ''} "
+            f"for review ({', '.join(parts)}). Signals, not proof — verify "
+            "each before acting."
+        )
+
+    return {
+        "url": base_url,
+        "findings": findings,
+        "counts": counts,
+        "summary": summary,
+    }
+
+
 if __name__ == "__main__":
 
     def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, "
-              "agentready, full")
+              "agentready, integrity, full")
         sys.exit(1)
 
     if len(sys.argv) < 2:
@@ -1323,6 +1557,13 @@ if __name__ == "__main__":
     elif mode == "agentready":
         # Non-scoring probe of the emerging agent/licensing protocol surface.
         data = check_agent_readiness(target_url)
+    elif mode == "integrity":
+        # Static content-integrity scan (GEO-spam / prompt-injection).
+        # Signals for review, not proof. Scan whatever HTML we get back,
+        # even on a non-200 (an error page can carry injected content too).
+        response = requests.get(target_url, headers=DEFAULT_HEADERS, timeout=30)
+        soup = BeautifulSoup(response.text, "lxml")
+        data = scan_content_integrity(soup, target_url)
     elif mode == "full":
         data = {
             "page": fetch_page(target_url, accept_language=accept_language),
