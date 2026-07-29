@@ -66,12 +66,12 @@ except ImportError:
 AI_CRAWLERS = {
     # OpenAI
     "GPTBot": {
-        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)",
         "class": "training",
         "operator": "OpenAI",
     },
     "OAI-SearchBot": {
-        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)",
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.4; +https://openai.com/searchbot)",
         "class": "search-index",
         "operator": "OpenAI",
     },
@@ -107,10 +107,16 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Perplexity",
     },
-    # Mistral
+    # Mistral. Both tokens documented at https://docs.mistral.ai/robots/ and
+    # both explicitly NOT used for generative AI training.
     "MistralAI-User": {
         "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-User/1.0; +https://docs.mistral.ai/robots)",
         "class": "live-retrieval",
+        "operator": "Mistral",
+    },
+    "MistralAI-Index": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-Index/1.0; +https://docs.mistral.ai/robots)",
+        "class": "search-index",
         "operator": "Mistral",
     },
     # DuckDuckGo

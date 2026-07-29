@@ -96,3 +96,28 @@ def test_stale_tokens_empty_when_none_present():
     with patch("fetch_page.requests.get", return_value=_resp(200, "User-agent: *\nDisallow:\n")):
         result = fetch_robots_txt("https://example.com")
     assert result["stale_tokens"] == []
+
+
+def test_every_ua_string_contains_its_own_token():
+    """A UA that doesn't contain its own token is a copy-paste error — the probe
+    would send the wrong identity and every downstream report row would be wrong."""
+    for name, info in AI_CRAWLERS.items():
+        assert name.lower() in info["ua"].lower(), f"{name}: UA does not contain its own token — {info['ua']}"
+
+
+def test_mistral_index_present_and_active():
+    """MistralAI-Index verified against https://docs.mistral.ai/robots/ — documented
+    as Mistral's indexing crawler for Mistral search (explicitly not training)."""
+    info = AI_CRAWLERS.get("MistralAI-Index")
+    assert info is not None, "MistralAI-Index must be in the roster"
+    assert info["class"] == "search-index"
+    assert info["operator"] == "Mistral"
+    assert info.get("status", "active") == "active"
+
+
+def test_openai_ua_versions_are_current():
+    """Verified against https://developers.openai.com/api/docs/bots — OpenAI's docs
+    list GPTBot/1.4 and OAI-SearchBot/1.4. Stale versions in a probe UA can trip
+    version-sensitive WAF rules and misrepresent us to the origin."""
+    assert "GPTBot/1.4" in AI_CRAWLERS["GPTBot"]["ua"]
+    assert "OAI-SearchBot/1.4" in AI_CRAWLERS["OAI-SearchBot"]["ua"]
