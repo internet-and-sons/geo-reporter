@@ -207,6 +207,43 @@ Assess whether the content shows signs of being AI-generated without meaningful 
 - **Likely AI with Light Editing**: Mostly generic with occasional specific details added.
 - **Likely Unedited AI**: Multiple red flags, no unique value, generic throughout.
 
+### Step 7.5: Scorer Negative Signals (informational, non-scoring)
+
+The citability scorer surfaces four **negative signals** that a human eye misses at speed. Run it and read the `negative_signals` block:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/citability_scorer.py" <url>
+```
+
+`analyze_page_citability()` returns `negative_signals`, each a `{value, flagged, note}` dict:
+
+| Signal | Flags when | What it means |
+|---|---|---|
+| `keyword_stuffing` | top-token frequency > 0.06 of body | One term is over-repeated — reads as SEO manipulation, not prose |
+| `cta_chrome_ratio` | > 0.30 of blocks | CTA/nav/share chrome crowds out citable substance |
+| `boilerplate_ratio` | > 0.25 of blocks | Near-duplicate blocks dilute unique, citable content |
+| `missing_author` | no byline detected in body | No author signal — AI engines weight author expertise |
+
+**These are INFORMATIONAL and do NOT change the Content Score** (this release's design decision). They are diagnostic colour, not a scored dimension — render each **flagged** signal as a non-scoring finding in contract format:
+
+> **Finding:** [one sentence — e.g. "One keyword dominates the body at 8.2% of meaningful tokens."]
+> **Evidence:** [the `value` from the signal, e.g. "keyword_stuffing.value = 0.082, threshold 0.06"].
+> **Impact:** [reader-terms — for keyword stuffing, cite the measured penalty: the Princeton KDD-2024 study measured keyword stuffing at roughly **-10% citation likelihood**. Use each signal's `note` for the others.]
+> **Fix:** [content task — e.g. "reduce repetition of the term; vary phrasing / add a visible byline + Person schema"].
+> **Confidence:** Likely. (A pattern was measured; it is a signal, not proof of manipulation.)
+
+If nothing is flagged, state that in one line as a small positive — do not manufacture findings.
+
+### Step 7.6: Content-Integrity Scan (non-scoring signal)
+
+Content-quality analysis should also run the integrity scan — or consume the orchestrator's integrity block if one is already present — to catch GEO-spam and prompt-injection aimed at AI crawlers (hidden text, model-directed instructions, zero-width characters, cloaked keyword blocks):
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> integrity
+```
+
+Surface any signals using the **`geo-integrity` skill's framing** — do not restate its rules here: it is **signal-not-verdict**, non-scoring, always quotes evidence, names innocent explanations (plugin/theme/inherited vendor), and caps any flagged finding at **Confidence: Likely** (never Confirmed — a *clean* scan is confirmable; a flagged one is only "likely" a problem). See `skills/geo-integrity/SKILL.md` for the rendering contract.
+
 ### Step 8: Topical Authority Assessment
 
 Evaluate whether the site demonstrates topical authority in the subject area of the target page:
@@ -308,6 +345,21 @@ H1: [Title]
 | No original data | [Yes/No] | |
 | Hedging overload | [Yes/No] | [Examples if yes] |
 | No authorial voice | [Yes/No] | |
+
+### Scorer Negative Signals (informational — does NOT affect Content Score)
+
+| Signal | Value | Flagged? | Note |
+|---|---|---|---|
+| Keyword stuffing | [value] | [Yes/No] | Princeton KDD-2024: ~-10% citation likelihood |
+| CTA/chrome ratio | [value] | [Yes/No] | [note] |
+| Boilerplate ratio | [value] | [Yes/No] | [note] |
+| Missing author | [Yes/No] | [Yes/No] | [note] |
+
+[Render each flagged signal as a contract-format finding, Confidence Likely. If none flagged, say so.]
+
+### Content Integrity (non-scoring signal)
+
+[Signals from the `fetch_page.py <url> integrity` scan, rendered per the `geo-integrity` skill's framing — signal-not-verdict, evidence quoted, max Confidence Likely. A clean scan is a small positive trust signal.]
 
 ### Topical Authority
 

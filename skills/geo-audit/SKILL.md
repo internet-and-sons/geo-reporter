@@ -18,7 +18,7 @@ This skill performs a comprehensive Generative Engine Optimization (GEO) audit o
 
 ## Report Contract (mandatory)
 
-Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 11 rules. In particular: the report leads with a ≤150-word TL;DR (score, top-3 actions with impact+effort, one-sentence posture); every status label comes from the contract's closed legend; every finding uses Finding/Evidence/Impact/Fix/Confidence; raw tables go to the appendix.
+Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 13 rules. In particular: the report leads with a ≤150-word TL;DR (score, top-3 actions with impact+effort, one-sentence posture); every status label comes from the contract's closed legend; every finding uses Finding/Evidence/Impact/Fix/Confidence; raw tables go to the appendix.
 
 ## Key Insight
 
@@ -29,6 +29,8 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
 ## Audit Workflow
 
 ### Phase 1: Discovery and Reconnaissance
+
+**Step 0: Ownership check (contract rule 13).** Establish whether this is the user's own site or a third party's. If third-party/competitor, run in External Observation mode: label the report "External Observation Only", cap the crawl at homepage + ≤20 pages, and present observations WITHOUT a /100 composite score. When ambiguous, ask "Is this your own site, or a competitor's / third party's?"
 
 **Step 1: Fetch Homepage and Detect Business Type**
 
@@ -143,6 +145,8 @@ Delegate analysis to 5 specialized subagents. Each subagent operates on the coll
 - Check author bios, credentials, source citations
 - Assess content freshness, depth, and originality
 - Verify "About" page quality and team credentials
+- Run the content-integrity scan (`fetch_page.py <url> integrity`) and surface any signals via the geo-integrity skill's framing (signal-not-verdict, max Confidence Likely)
+- Surface the citability scorer's `negative_signals` (keyword stuffing, CTA-in-body, boilerplate, missing author) as informational findings — they do NOT change the score
 
 **Subagent 5: Schema & Structured Data (geo-schema)**
 - Validate all schema.org markup
@@ -181,6 +185,10 @@ GEO_Score = (Citability * 0.25) + (Brand * 0.20) + (EEAT * 0.20) + (Technical * 
 | 60-74 | Fair | Moderate GEO presence; significant optimization opportunities exist |
 | 40-59 | Poor | Weak GEO signals; AI systems may struggle to cite or recommend |
 | 0-39 | Critical | Minimal GEO optimization; site is largely invisible to AI systems |
+
+#### Evaluator self-check (contract rule 12)
+
+Before delivering, run the 8-point self-check from REPORT-CONTRACT.md rule 12 (evidence on every Critical/High, score matches findings, no fabricated metrics, no YMYL schema without credentials, no duplicate findings, scope respected, fixes name specific elements, high-risk code withheld). Fix any failure before output.
 
 ---
 

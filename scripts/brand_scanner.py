@@ -16,7 +16,7 @@ Platform importance for AI citations:
 import sys
 import json
 import re
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 try:
     import requests
@@ -182,6 +182,133 @@ def check_wikipedia_presence(brand_name: str, languages=("en", "he")) -> dict:
     ]
 
     return result
+
+
+_SAMEAS_PLATFORMS = (
+    ("wikipedia", "Wikipedia"),
+    ("wikidata", "Wikidata"),
+    ("linkedin", "LinkedIn"),
+    ("youtube", "YouTube"),
+    ("twitter", "X/Twitter"),
+    ("x.com", "X/Twitter"),
+    ("facebook", "Facebook"),
+    ("instagram", "Instagram"),
+    ("github", "GitHub"),
+    ("crunchbase", "Crunchbase"),
+)
+
+
+def _classify_sameas_platform(url: str) -> str:
+    """Classify a sameAs URL to a known platform by its host."""
+    host = (urlparse(url).hostname or "").lower()
+    for needle, label in _SAMEAS_PLATFORMS:
+        if needle in host:
+            return label
+    return "Other"
+
+
+def check_sameas_liveness(structured_data, timeout=10) -> dict:
+    """Extract sameAs URLs + @id values from JSON-LD and HEAD-check liveness.
+
+    Walks structured_data recursively (dicts, @graph lists, nested
+    dicts/lists — mirrors extract_freshness in fetch_page.py). Every
+    ``sameAs`` value (string or list of strings) is collected and deduped
+    preserving first-seen order; every ``@id`` is collected distinctly.
+
+    Each sameAs URL is HEAD-checked. Servers that reject HEAD (raise, or
+    return 405) get one GET retry with stream=True. Degenerate URLs
+    (``#``, ``""``, anything not http(s)) are guarded — never requested —
+    and recorded as status None / live False.
+
+    Non-scoring: a broken sameAs link is a *finding* for human review, not
+    a score change. The entity graph AI engines walk to confirm identity
+    is only as trustworthy as its links resolve.
+    """
+    result = {
+        "sameas_urls": [],
+        "at_ids": [],
+        "at_id_present": False,
+        "checks": [],
+        "live_count": 0,
+        "broken": [],
+    }
+
+    def _walk(nodes):
+        for node in nodes or []:
+            if isinstance(node, dict):
+                yield node
+                for v in node.values():
+                    if isinstance(v, dict):
+                        yield from _walk([v])
+                    elif isinstance(v, list):
+                        yield from _walk(v)
+
+    seen_urls = set()
+    seen_ids = set()
+    for node in _walk(structured_data):
+        same = node.get("sameAs")
+        if isinstance(same, str):
+            same = [same]
+        if isinstance(same, list):
+            for entry in same:
+                if isinstance(entry, str) and entry not in seen_urls:
+                    seen_urls.add(entry)
+                    result["sameas_urls"].append(entry)
+        node_id = node.get("@id")
+        if isinstance(node_id, str) and node_id not in seen_ids:
+            seen_ids.add(node_id)
+            result["at_ids"].append(node_id)
+
+    result["at_id_present"] = bool(result["at_ids"])
+
+    for url in result["sameas_urls"]:
+        status = None
+        if url.startswith("http://") or url.startswith("https://"):
+            status = _probe_liveness(url, timeout)
+        live = status is not None and status < 400
+        result["checks"].append(
+            {
+                "url": url,
+                "platform": _classify_sameas_platform(url),
+                "status": status,
+                "live": live,
+            }
+        )
+        if live:
+            result["live_count"] += 1
+        else:
+            result["broken"].append(url)
+
+    return result
+
+
+def _probe_liveness(url: str, timeout) -> "int | None":
+    """HEAD-check a URL; retry once with GET on exception or 405.
+
+    Returns the final HTTP status code, or None if both attempts fail.
+    """
+    try:
+        resp = requests.head(
+            url, headers=DEFAULT_HEADERS, allow_redirects=True, timeout=timeout
+        )
+        status = resp.status_code
+    except requests.RequestException:
+        status = None
+
+    if status is None or status == 405:
+        try:
+            resp = requests.get(
+                url,
+                headers=DEFAULT_HEADERS,
+                allow_redirects=True,
+                timeout=timeout,
+                stream=True,
+            )
+            status = resp.status_code
+        except requests.RequestException:
+            status = None
+
+    return status
 
 
 def check_linkedin_presence(brand_name: str) -> dict:
