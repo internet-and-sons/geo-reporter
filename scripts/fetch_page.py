@@ -412,8 +412,12 @@ def extract_freshness(structured_data, soup, headers) -> dict:
     return result
 
 
-def fetch_page(url: str, timeout: int = 30) -> dict:
-    """Fetch a page and return structured analysis data."""
+def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict:
+    """Fetch a page and return structured analysis data.
+
+    accept_language overrides the default Accept-Language header so the
+    non-default language tree of a bilingual site can be audited.
+    """
     result = {
         "url": url,
         "status_code": None,
@@ -443,9 +447,12 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         return result
 
     try:
+        request_headers = dict(DEFAULT_HEADERS)
+        if accept_language:
+            request_headers["Accept-Language"] = f"{accept_language},{accept_language};q=0.9,en;q=0.5"
         response = requests.get(
             url,
-            headers=DEFAULT_HEADERS,
+            headers=request_headers,
             timeout=timeout,
             allow_redirects=True,
         )
@@ -1166,15 +1173,22 @@ def crawl_sitemap(url: str, max_pages: int = 50, timeout: int = 15) -> list:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python fetch_page.py <url> [mode]")
+        print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, full")
         sys.exit(1)
+
+    accept_language = None
+    if "--accept-language" in sys.argv:
+        idx = sys.argv.index("--accept-language")
+        if idx + 1 < len(sys.argv):
+            accept_language = sys.argv[idx + 1]
+            del sys.argv[idx:idx + 2]
 
     target_url = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else "page"
 
     if mode == "page":
-        data = fetch_page(target_url)
+        data = fetch_page(target_url, accept_language=accept_language)
     elif mode == "robots":
         data = fetch_robots_txt(target_url)
     elif mode == "llms":
