@@ -1184,11 +1184,89 @@ def crawl_sitemap(url: str, max_pages: int = 50, timeout: int = 15) -> list:
     return list(discovered_pages)[:max_pages]
 
 
+AGENT_READINESS_ENDPOINTS = {
+    # name: (path, spec, expects) — expects: "json", "text", or "endpoint"
+    "api_catalog": ("/.well-known/api-catalog", "RFC 9727", "json"),
+    "oauth_authorization_server": ("/.well-known/oauth-authorization-server", "RFC 8414", "json"),
+    "oauth_protected_resource": ("/.well-known/oauth-protected-resource", "RFC 9728", "json"),
+    "mcp_server_card": ("/.well-known/mcp/server-card.json", "MCP SEP-1649", "json"),
+    "agents_json": ("/.well-known/agents.json", "agents.json (pre-standard)", "json"),
+    "web_bot_auth_directory": ("/.well-known/http-message-signatures-directory", "Web Bot Auth (IETF draft)", "json"),
+    "rsl_txt": ("/rsl.txt", "RSL 1.0", "text"),
+    "rsl_xml": ("/rsl.xml", "RSL 1.0", "text"),
+    "nlweb_ask": ("/ask", "NLWeb", "endpoint"),
+    "nlweb_mcp": ("/mcp", "NLWeb / MCP", "endpoint"),
+}
+
+
+def check_agent_readiness(url: str, timeout: int = 10) -> dict:
+    """Probe the emerging agent/licensing protocol surface (non-scoring).
+
+    Every check here targets an emerging spec (2025-2026). Absence is the
+    norm and must never be penalized — the report layer surfaces presence
+    as a forward-looking signal only.
+
+    found semantics per expects-type:
+      json/text — HTTP 200 AND body does not look like an HTML page
+                  (SPAs serve index.html for unknown paths: soft-404 guard)
+      endpoint  — any response except 404 (NLWeb's /ask and /mcp are POST
+                  endpoints; GET commonly returns 405, which still proves
+                  the route exists)
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return {"url": url, "checks": {}, "homepage_headers": {},
+                "summary": {"found_count": 0, "checked_count": 0},
+                "errors": [f"Unsupported URL scheme: {parsed.scheme!r}"]}
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    result = {
+        "url": base,
+        "checks": {},
+        "homepage_headers": {"content_usage": None, "content_signal": None, "link": None},
+        "summary": {"found_count": 0, "checked_count": len(AGENT_READINESS_ENDPOINTS)},
+        "errors": [],
+    }
+
+    def _looks_like_html(text):
+        head = (text or "")[:256].lstrip().lower()
+        return head.startswith("<!doctype html") or head.startswith("<html")
+
+    for name, (path, spec, expects) in AGENT_READINESS_ENDPOINTS.items():
+        check = {"path": path, "spec": spec, "status": None, "found": False}
+        try:
+            resp = requests.get(base + path, headers=DEFAULT_HEADERS,
+                                timeout=timeout, allow_redirects=True)
+            check["status"] = resp.status_code
+            if expects == "endpoint":
+                check["found"] = resp.status_code != 404
+            else:
+                check["found"] = resp.status_code == 200 and not _looks_like_html(resp.text)
+        except Exception as e:
+            result["errors"].append(f"{name}: {e}")
+        result["checks"][name] = check
+
+    try:
+        home = requests.get(base, headers=DEFAULT_HEADERS, timeout=timeout,
+                            allow_redirects=True)
+        result["homepage_headers"]["content_usage"] = home.headers.get("Content-Usage")
+        result["homepage_headers"]["content_signal"] = home.headers.get("Content-Signal")
+        result["homepage_headers"]["link"] = home.headers.get("Link")
+    except Exception as e:
+        result["errors"].append(f"homepage headers: {e}")
+
+    result["summary"]["found_count"] = sum(
+        1 for c in result["checks"].values() if c["found"]
+    )
+    return result
+
+
 if __name__ == "__main__":
 
     def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
-        print("Modes: page (default), robots, llms, sitemap, blocks, bots, full")
+        print("Modes: page (default), robots, llms, sitemap, blocks, bots, "
+              "agentready, full")
         sys.exit(1)
 
     if len(sys.argv) < 2:
@@ -1225,6 +1303,9 @@ if __name__ == "__main__":
         # Live AI crawler reachability probe — empirical complement to
         # the static `robots` mode. See probe_ai_crawlers() for details.
         data = probe_ai_crawlers(target_url)
+    elif mode == "agentready":
+        # Non-scoring probe of the emerging agent/licensing protocol surface.
+        data = check_agent_readiness(target_url)
     elif mode == "full":
         data = {
             "page": fetch_page(target_url, accept_language=accept_language),
