@@ -34,10 +34,13 @@ Use the structured JSON fields directly — no re-parsing needed:
 | Meta description + canonical | `description`, `canonical` |
 | Open Graph + Twitter Card tags | `meta_tags` |
 | JSON-LD (Article.author, datePublished) | `structured_data[]` |
+| Publication/modification dates + freshness tier | `freshness` (`best_date`, `age_days`, `tier`, `source`) |
 | HTTP response status / headers | `status_code`, `headers`, `security_headers` |
 | JS-rendered SPA warning | `has_ssr_content == false` → flag as critical |
 
-For author byline and publication-date detection: prefer `structured_data[]` (`Article.author`, `Article.datePublished`, `Article.dateModified`) over text-pattern matching. Fall back to scanning `text_content` only if no structured data is present.
+Score freshness with the tier table in `skills/geo-content/SKILL.md`; "unknown" (undated content) and "future-dated" (markup defect) are themselves findings.
+
+For author byline detection: prefer `structured_data[]` (`Article.author`) over text-pattern matching. Fall back to scanning `text_content` only if no structured data is present. For dates, use the pre-resolved `freshness` object rather than re-reading `structured_data[]` by hand.
 
 When invoked via `/geo audit`, the Phase 1 fetch may already have produced this data — consume it instead of re-fetching.
 
@@ -131,7 +134,7 @@ Trustworthiness is the foundational element of E-E-A-T. Google considers it the 
 | **Transparent sourcing** | Are sources cited inline, linked, or referenced? | Strong |
 | **Reviews/testimonials** | Third-party reviews, ratings, or testimonials present? | Moderate |
 | **Clear ownership** | Is it clear who owns and operates the site? | Moderate |
-| **Content dating** | Are publication and update dates visible? | Moderate |
+| **Content dating** | Are publication and update dates machine-readable? Judge from the `freshness` field (`source` shows where the date came from), not from a visual scan. | Moderate |
 | **Conflict of interest disclosure** | Are sponsored content, affiliate links, or partnerships disclosed? | Moderate |
 
 **Trustworthiness Score (0-25):**
@@ -216,12 +219,12 @@ Evaluate whether the site demonstrates topical authority in the subject area of 
 
 ### Step 9: Content Freshness
 
-- Publication date visible? Record it.
-- Last-updated date visible? Record it.
-- Age of content (if dates are available).
-- Are there signs of regular updates (e.g., "Updated for 2026")?
-- Is the content time-sensitive? (News, statistics, technology topics require freshness; evergreen topics are less affected.)
-- Flag content older than 2 years on time-sensitive topics.
+- Read `freshness` from the Step 1 fetch — do not eyeball dates out of the rendered text. Record `best_date`, `age_days`, `tier`, and `source`.
+- Assign the tier's treatment using the six-tier table in `skills/geo-content/SKILL.md` (fresh / aging / stale / very-stale / future-dated / unknown). Roughly half of AI-cited pages were published or updated within the prior 13 weeks, so the `fresh` boundary at 90 days is the one that matters most.
+- `unknown` = no machine-readable date; report it as a finding (fix: `<time datetime>` + Article `datePublished`/`dateModified`), not as a neutral "not visible".
+- `future-dated` = a date more than a day ahead; report it as a markup defect (template-variable bug or wrong year), never as freshness credit.
+- Are there signs of regular updates (e.g., "Updated for 2026")? A visible update note that the `freshness` field cannot corroborate is worth flagging — the claim is not machine-readable.
+- Is the content time-sensitive? (News, statistics, technology topics require freshness; evergreen topics are less affected.) Weight `stale`/`very-stale` findings up on time-sensitive and YMYL topics.
 
 ### Step 10: Calculate Content Score
 
@@ -317,11 +320,12 @@ H1: [Title]
 
 ### Content Freshness
 
-**Publication Date:** [Date or "Not visible"]
-**Last Updated:** [Date or "Not visible"]
-**Content Age:** [Age or "Unknown"]
+**Publication Date:** [datePublished or "Not found"]
+**Last Updated:** [dateModified or "Not found"]
+**Best Date:** [freshness.best_date] (source: [freshness.source])
+**Content Age:** [freshness.age_days] days
 **Time Sensitivity:** [High/Medium/Low]
-**Freshness Assessment:** [Current/Aging/Stale/Unknown]
+**Freshness Tier:** [fresh / aging / stale / very-stale / future-dated / unknown] — [treatment per the tier table]
 
 ### Priority Actions
 
@@ -339,5 +343,6 @@ H1: [Title]
 - AI content detection is imprecise. Do NOT make definitive claims about whether content is AI-generated. Describe the signals observed and provide an assessment of likelihood.
 - Readability scoring is an approximation from text sampling. Note this limitation in the output.
 - Topical authority assessment is limited to what is observable from the target page and its visible internal links. A full topical authority audit requires crawling the entire site.
-- Content freshness matters most for YMYL (Your Money, Your Life) topics: health, finance, legal, and safety content. Weight it higher for these topics.
+- Content freshness matters most for YMYL (Your Money, Your Life) topics: health, finance, legal, safety, and — since the Sept 2025 Quality Rater Guidelines — Government/Civics content including elections. Weight it higher for these topics.
+- The Sept 2025 QRG also made a visible corrections/editorial-standards page a scored trust item. Its absence on a YMYL or news site is a Medium finding, not a nitpick.
 - When assessing content quality, focus on the value the content provides to readers, not just its SEO optimization.

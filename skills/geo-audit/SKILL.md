@@ -16,6 +16,10 @@ allowed-tools:
 
 This skill performs a comprehensive Generative Engine Optimization (GEO) audit of any website. GEO is the practice of optimizing web content so that AI systems (ChatGPT, Claude, Perplexity, Gemini, etc.) can discover, understand, cite, and recommend it. This audit measures how well a site performs across all GEO dimensions and produces an actionable improvement plan.
 
+## Report Contract (mandatory)
+
+Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 11 rules. In particular: the report leads with a ≤150-word TL;DR (score, top-3 actions with impact+effort, one-sentence posture); every status label comes from the contract's closed legend; every finding uses Finding/Evidence/Impact/Fix/Confidence; raw tables go to the appendix.
+
 ## Key Insight
 
 Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citation and recommendation. Sites that score high on GEO metrics see 30-115% more visibility in AI-generated responses (Georgia Tech / Princeton / IIT Delhi 2024 study). The two disciplines overlap but have distinct requirements.
@@ -47,6 +51,8 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
    | `headers`, `security_headers` | full HTTP response headers (CSP, HSTS, X-Frame-Options, etc.) |
    | `status_code`, `redirect_chain` | response status + redirect history |
    | `has_ssr_content` | **`false` = JS-rendered SPA with no server-side content**; AI crawlers will see an empty page. Flag as a critical issue if this is the case. |
+
+**Multilingual detection (mandatory):** before crawling, determine whether the site is multilingual: look for hreflang link pairs, language path prefixes (`/en/`, `/he/`), and the `Content-Language` response header. If multilingual, run the audit **per language tree**: crawl each tree separately (use `--accept-language <lang>` on fetch_page.py for language-negotiating sites), give each tree its own category scores and findings, and structure the final report with one section per language (contract rule 7). Never average two languages into one score — a site can be dominant in one language and invisible in the other.
 
 2. Extract these signals from the JSON (no re-fetch needed):
    - Page title, meta description, H1 heading (from `title`, `description`, `h1_tags`)
@@ -191,7 +197,6 @@ Every issue found during the audit is classified by severity:
 
 ### High (Fix Within 1 Week)
 - Key AI crawlers (GPTBot, ClaudeBot, PerplexityBot) blocked
-- No llms.txt file present
 - Zero question-answering content blocks on key pages
 - Missing Organization or LocalBusiness schema
 - No author attribution on content pages
@@ -199,11 +204,12 @@ Every issue found during the audit is classified by severity:
 
 ### Medium (Fix Within 1 Month)
 - Partial AI crawler blocking (some allowed, some blocked)
-- llms.txt exists but is incomplete or malformed
 - Content blocks average under 50 citability score
 - Missing FAQ schema on pages with FAQ content
 - Thin author bios without credentials
 - No Wikipedia or Reddit brand presence
+- Content undated or older than 13 weeks on key pages (AI engines measurably prefer fresh content)
+- robots.txt carries rules for retired bot tokens (anthropic-ai, claude-web, FacebookBot) — dead weight, cleanup recommended
 
 ### Low (Optimize When Possible)
 - Minor schema validation errors
@@ -212,6 +218,7 @@ Every issue found during the audit is classified by severity:
 - Missing Open Graph tags
 - Suboptimal heading hierarchy on some pages
 - LinkedIn company page exists but is incomplete
+- No llms.txt file (informational: no measured citation impact; useful only for developer-facing sites serving coding agents)
 
 ---
 
@@ -222,22 +229,35 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 ```markdown
 # GEO Audit Report: [Site Name]
 
-**Audit Date:** [Date]
-**URL:** [URL]
-**Business Type:** [Detected Type]
-**Pages Analyzed:** [Count]
+**Audit Date:** [Date] · **URL:** [URL] · **Business Type:** [Type] · **Pages Analyzed:** [Count] · **Languages:** [e.g. Hebrew + English]
 
----
+## TL;DR
 
-## Executive Summary
+**GEO Score: [X]/100 ([Rating])** [— up/down N since last audit]
 
-**Overall GEO Score: [X]/100 ([Rating])**
+[One plain-language sentence on overall posture.]
 
-[2-3 sentence summary of the site's GEO health, biggest strengths, and most critical gaps.]
+**Do these three things this week:**
+1. [Action] — Impact: [High/Med/Low] · Effort: [minutes/hours/days] · Owner: [developer/content/marketing]
+2. [Action] — Impact · Effort · Owner
+3. [Action] — Impact · Effort · Owner
 
-### Score Breakdown
+## What changed since the last audit
+[Only if a prior audit exists: Fixed / Regressed / New. Otherwise omit this section.]
 
-| Category | Score | Weight | Weighted Score |
+## Findings
+
+[Per language tree if multilingual. Each finding in contract format:]
+
+### [Finding title in plain language]
+**Evidence:** [what was observed, quoted]
+**Impact:** [reader terms; say "no action needed" when true]
+**Fix:** [paste-ready artifact, or task + owner + effort. For content fixes: proposed title, structure, and who currently wins the query]
+**Confidence:** [Confirmed | Likely | Hypothesis]
+
+## Score Breakdown
+
+| Category | Score | Weight | Weighted |
 |---|---|---|---|
 | AI Citability | [X]/100 | 25% | [X] |
 | Brand Authority | [X]/100 | 20% | [X] |
@@ -245,83 +265,13 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 | Technical GEO | [X]/100 | 15% | [X] |
 | Schema & Structured Data | [X]/100 | 10% | [X] |
 | Platform Optimization | [X]/100 | 10% | [X] |
-| **Overall GEO Score** | | | **[X]/100** |
-
----
-
-## Critical Issues (Fix Immediately)
-
-[List each critical issue with specific page URLs and recommended fix]
-
-## High Priority Issues
-
-[List each high-priority issue with details]
-
-## Medium Priority Issues
-
-[List each medium-priority issue]
-
-## Low Priority Issues
-
-[List each low-priority issue]
-
----
-
-## Category Deep Dives
-
-### AI Citability ([X]/100)
-[Detailed findings, examples of good/bad passages, rewrite suggestions]
-
-### Brand Authority ([X]/100)
-[Platform presence map, mention volume, sentiment]
-
-### Content E-E-A-T ([X]/100)
-[Author quality, source citations, freshness, depth]
-
-### Technical GEO ([X]/100)
-[Crawler access, llms.txt, rendering, headers]
-
-### Schema & Structured Data ([X]/100)
-[Schema types found, validation results, missing opportunities]
-
-### Platform Optimization ([X]/100)
-[Presence on YouTube, Reddit, Wikipedia, etc.]
-
----
-
-## Quick Wins (Implement This Week)
-
-1. [Specific, actionable quick win with expected impact]
-2. [Another quick win]
-3. [Another quick win]
-4. [Another quick win]
-5. [Another quick win]
+| **Overall** | | | **[X]/100** |
 
 ## 30-Day Action Plan
+[Week-by-week checkboxes, each item carrying owner + effort tags.]
 
-### Week 1: [Theme]
-- [ ] Action item 1
-- [ ] Action item 2
-
-### Week 2: [Theme]
-- [ ] Action item 1
-- [ ] Action item 2
-
-### Week 3: [Theme]
-- [ ] Action item 1
-- [ ] Action item 2
-
-### Week 4: [Theme]
-- [ ] Action item 1
-- [ ] Action item 2
-
----
-
-## Appendix: Pages Analyzed
-
-| URL | Title | GEO Issues |
-|---|---|---|
-| [url] | [title] | [issue count] |
+## Appendix
+[Raw tables: per-bot crawler matrix with the contract status legend printed above it, all-blocks citability scores, header dumps, pages analyzed, methodology, checks that did not run ("<metric> not measured — <how>").]
 ```
 
 ---

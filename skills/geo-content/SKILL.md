@@ -118,6 +118,29 @@ Signals that the content and its publisher are reliable and transparent.
 
 ---
 
+## 2026 E-E-A-T updates (Quality Rater Guidelines, Sept 2025)
+
+- Raters explicitly assess AI-generated/paraphrased content. AI use alone does not lower quality; low-effort AI output with no human oversight rates Lowest. Audit signal: does the site show human authorship, editing, and first-hand experience that AI cannot fake?
+- YMYL expanded to include Government/Civics topics (incl. elections).
+- **Corrections & editorial policy is now a scored trust item for publishers**: check for a visible corrections/editorial-standards page linked from the footer or about page. Present = trust credit; absent on a YMYL/news site = Medium finding with a concrete fix (2–3 hour content task, marketing owner).
+
+## Freshness scoring (uses fetch_page's `freshness` field)
+
+`fetch_page.py <url> page` returns `freshness: {best_date, age_days, tier, source}`. Score per key page:
+
+| Tier | age_days | Treatment |
+|---|---|---|
+| fresh | < 90 | Full freshness credit — inside the ~13-week window AI engines measurably prefer |
+| aging | 90–365 | Partial credit; recommend a dated refresh for high-value pages |
+| stale | 365–730 | Finding: update + re-stamp dateModified |
+| very-stale | > 730 | Finding: treat as decayed content |
+| future-dated | date >1 day ahead | **Finding: markup defect** — a future datePublished/dateModified is a schema error (template-variable bug, wrong year). Fix the date; AI engines cannot trust the page's recency claims |
+| unknown | no date found | Finding in itself: content is undated — AI engines cannot verify recency. Fix: machine-readable dates (`<time datetime>`, Article schema) |
+
+Report freshness per language tree on bilingual sites.
+
+---
+
 ## Content Quality Metrics
 
 ### Word Count Benchmarks
@@ -209,19 +232,13 @@ AI-generated content is **acceptable** per Google's guidance (March 2024 clarifi
 ## Content Freshness Assessment
 
 ### Publication Dates
-- Check for visible `datePublished` and `dateModified` in both the content and structured data
-- Content without dates is treated as less trustworthy by AI platforms
-- Dates should be specific (January 15, 2026) not vague ("recently")
+- Do **not** eyeball dates from rendered text. `fetch_page.py <url> page` resolves `datePublished`, `dateModified`, and the `Last-Modified` header into a single `freshness` object — use `best_date`, `age_days`, and `tier` as the measurement, and `source` to say where the date came from.
+- Human-readable dates on the page still matter as a trust signal: a page whose `freshness.source` is only a header (no visible or machine-readable date in the content) reads as undated to both users and AI platforms.
+- Dates should be specific (January 15, 2026) not vague ("recently").
 
 ### Freshness Scoring
 
-| Criterion | Score |
-|---|---|
-| Updated within 3 months | Excellent — current and relevant |
-| Updated within 6 months | Good — still reasonably current |
-| Updated within 12 months | Acceptable — may need refresh |
-| Updated 12-24 months ago | Warning — review for accuracy |
-| No date or 24+ months old | Critical — AI platforms may deprioritize |
+Score with the six-tier table in [Freshness scoring](#freshness-scoring-uses-fetch_pages-freshness-field) above — it is driven by `freshness.tier`, not by judgement. `unknown` (undated content) and `future-dated` (a markup defect) are findings in their own right, not merely absent credit.
 
 ### Evergreen Indicators
 Some content remains relevant regardless of age. Flag content as evergreen if:
@@ -322,9 +339,11 @@ Date: [Date]
 [Any low-quality AI content patterns detected, with specific examples]
 
 ## Freshness Assessment
-| Page | Published | Last Updated | Status |
-|---|---|---|---|
-| [URL] | [Date] | [Date] | [Current/Stale/No Date] |
+Tiers come from `freshness.tier` (fetch_page `page` mode). On bilingual sites, group rows by language tree.
+
+| Page | Published | Last Updated | Best Date (source) | Age (days) | Tier |
+|---|---|---|---|---|---|
+| [URL] | [datePublished] | [dateModified] | [best_date] ([source]) | [age_days] | [fresh/aging/stale/very-stale/future-dated/unknown] |
 
 ## Citability Assessment
 ### Most Citable Passages

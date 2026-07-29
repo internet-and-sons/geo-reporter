@@ -7,7 +7,9 @@ Extracts HTML, text content, meta tags, headers, and structured data.
 import sys
 import json
 import re
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
 try:
@@ -42,6 +44,22 @@ except ImportError:
 #   traditional-search — Googlebot, Bingbot. Power Google AI Overviews
 #                    and Bing/Copilot. Blocking is almost always a
 #                    misconfiguration and worth flagging loudly.
+#
+# Each entry also carries a "status" (defaulting to "active" when
+# absent), because the roster is the single source of truth for BOTH
+# the live probe and the robots.txt declared-policy parser:
+#
+#   active        — real, currently-operating crawler. Probed live.
+#   retired       — legacy token the operator no longer fetches with
+#                   (anthropic-ai, claude-web, FacebookBot). Kept so
+#                   robots.txt analysis can spot stale configs; never
+#                   probed, because a 403 for a UA nobody sends is noise.
+#   opt-out-token — robots.txt signal only (Google-Extended,
+#                   Applebot-Extended). The operator never fetches with
+#                   this UA, so probing measures WAF UA-filtering and
+#                   nothing else. Declared-policy analysis only.
+#
+# Use active_crawlers() for anything that hits the network.
 #
 # See OpenAI/Anthropic/Perplexity bot docs and the Cloudflare/Botify
 # 2025 publisher-log analyses cited in the geo-botaccess SKILL.md.
@@ -78,11 +96,6 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Anthropic",
     },
-    "anthropic-ai": {
-        "ua": "anthropic-ai/1.0",
-        "class": "training",
-        "operator": "Anthropic",
-    },
     # Perplexity
     "PerplexityBot": {
         "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
@@ -94,6 +107,50 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Perplexity",
     },
+    # Mistral
+    "MistralAI-User": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-User/1.0; +https://docs.mistral.ai/robots)",
+        "class": "live-retrieval",
+        "operator": "Mistral",
+    },
+    # DuckDuckGo
+    "DuckAssistBot": {
+        "ua": "Mozilla/5.0 (compatible; DuckAssistBot/1.2; +http://duckduckgo.com/duckassistbot.html)",
+        "class": "search-index",
+        "operator": "DuckDuckGo",
+    },
+    # Google agentic / grounding fetchers (Web Bot Auth signer; a plain
+    # UA replay approximates WAF UA-filtering only, not signature checks)
+    "Google-Agent": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent) Chrome/138.0.0.0 Safari/537.36",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    "Google-CloudVertexBot": {
+        "ua": "Mozilla/5.0 (compatible; Google-CloudVertexBot/1.0; +http://www.google.com/bot.html)",
+        "class": "training",
+        "operator": "Google",
+    },
+    # Google-NotebookLM is the LEGACY token for the Gemini Notebook
+    # fetcher. Google renamed it to Google-GeminiNotebook and supports
+    # the old spelling only through August 2026 — probe both until then,
+    # then flip Google-NotebookLM to status "retired".
+    "Google-NotebookLM": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-NotebookLM; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    "Google-GeminiNotebook": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-GeminiNotebook; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    # Amazon
+    "Amazonbot": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1) Chrome/119.0.0.0 Safari/537.36",
+        "class": "search-index",
+        "operator": "Amazon",
+    },
     # Google / Apple training opt-out tokens. These aren't real crawlers
     # — they're robots.txt signals that the operator honours separately.
     # Probing them tests only WAF-side UA filtering; treat results as
@@ -102,11 +159,13 @@ AI_CRAWLERS = {
         "ua": "Mozilla/5.0 (compatible; Google-Extended/1.0; +http://www.google.com/bot.html)",
         "class": "training",
         "operator": "Google",
+        "status": "opt-out-token",
     },
     "Applebot-Extended": {
         "ua": "Mozilla/5.0 (compatible; Applebot-Extended/1.0)",
         "class": "training",
         "operator": "Apple",
+        "status": "opt-out-token",
     },
     # Traditional search bots (blocking these is usually a mistake).
     # Surface separately because Googlebot 403 also kills regular
@@ -143,6 +202,26 @@ AI_CRAWLERS = {
         "class": "training",
         "operator": "Cohere",
     },
+    # Retired legacy tokens — declared-policy analysis + stale-config
+    # detection only; never probed live.
+    "anthropic-ai": {
+        "ua": "anthropic-ai/1.0",
+        "class": "training",
+        "operator": "Anthropic",
+        "status": "retired",
+    },
+    "claude-web": {
+        "ua": "claude-web/1.0",
+        "class": "training",
+        "operator": "Anthropic",
+        "status": "retired",
+    },
+    "FacebookBot": {
+        "ua": "FacebookBot/1.0 (+http://www.facebook.com/bot.html)",
+        "class": "training",
+        "operator": "Meta",
+        "status": "retired",
+    },
 }
 
 # The four bot classes, in priority order for verdict logic. The
@@ -154,6 +233,19 @@ BOT_CLASSES = (
     "traditional-search",
     "training",
 )
+
+
+def active_crawlers() -> dict:
+    """Subset of AI_CRAWLERS that are real, currently-operating crawlers.
+
+    The live probe uses ONLY this subset. Retired tokens and opt-out
+    tokens stay in AI_CRAWLERS for declared-policy (robots.txt) analysis.
+    """
+    return {
+        name: info
+        for name, info in AI_CRAWLERS.items()
+        if info.get("status", "active") == "active"
+    }
 
 # Back-compat alias for callers and tests that still reference the
 # flat "AI search bots" set. New code should use AI_CRAWLERS[name]["class"].
@@ -231,8 +323,101 @@ DEFAULT_HEADERS = {
 }
 
 
-def fetch_page(url: str, timeout: int = 30) -> dict:
-    """Fetch a page and return structured analysis data."""
+FRESHNESS_TIERS = ((90, "fresh"), (365, "aging"), (730, "stale"))
+
+
+def extract_freshness(structured_data, soup, headers) -> dict:
+    """Best-effort content dates + freshness tier.
+
+    Priority: JSON-LD dateModified > JSON-LD datePublished >
+    <time datetime> > Last-Modified header. Freshness is a measured
+    AI-citation signal (~50% of cited pages <13 weeks old, Ahrefs 2026);
+    'unknown' means undated content — itself a finding, since AI engines
+    can't verify recency without a machine-readable date.
+
+    Tiers: fresh <90d, aging 90-365d, stale 365-730d, very-stale >730d,
+    future-dated more than a day ahead of now, unknown when no date is
+    discoverable. 'future-dated' is a markup defect, not fresh content —
+    age_days stays negative as evidence rather than being clamped. Dates
+    up to a day ahead stay 'fresh'; see the tolerance note below.
+    """
+    result = {
+        "date_published": None,
+        "date_modified": None,
+        "last_modified_header": (headers or {}).get("Last-Modified"),
+        "best_date": None,
+        "age_days": None,
+        "tier": "unknown",
+        "source": None,
+    }
+
+    def _walk(nodes):
+        for node in nodes or []:
+            if isinstance(node, dict):
+                yield node
+                for v in node.values():
+                    if isinstance(v, dict):
+                        yield from _walk([v])
+                    elif isinstance(v, list):
+                        yield from _walk(v)
+
+    for node in _walk(structured_data):
+        if not result["date_published"] and node.get("datePublished"):
+            result["date_published"] = str(node["datePublished"])
+        if not result["date_modified"] and node.get("dateModified"):
+            result["date_modified"] = str(node["dateModified"])
+
+    candidates = [
+        (result["date_modified"], "structured_data"),
+        (result["date_published"], "structured_data"),
+    ]
+    if soup is not None:
+        t = soup.find("time", attrs={"datetime": True})
+        if t:
+            candidates.append((t["datetime"], "time_tag"))
+    candidates.append((result["last_modified_header"], "http_header"))
+
+    for raw, source in candidates:
+        if not raw:
+            continue
+        parsed = None
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(str(raw))
+            except (TypeError, ValueError):
+                continue
+        if parsed is None:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - parsed).days
+        result["best_date"] = str(raw)
+        result["age_days"] = age
+        result["source"] = source
+        # -1 tolerance, not 0: naive (offset-less) markup from a site ahead of
+        # UTC parses as "future" here, since we stamp naive datetimes as UTC.
+        # Worst legitimate case is UTC+14, which floors to age_days == -1, so
+        # anything below that is a genuine defect (template-variable bugs,
+        # dates months or years out) rather than timezone skew.
+        if age < -1:
+            result["tier"] = "future-dated"
+        else:
+            result["tier"] = next(
+                (tier for limit, tier in FRESHNESS_TIERS if age < limit), "very-stale"
+            )
+        break
+
+    return result
+
+
+def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict:
+    """Fetch a page and return structured analysis data.
+
+    accept_language overrides the default Accept-Language header so the
+    non-default language tree of a bilingual site can be audited.
+    """
     result = {
         "url": url,
         "status_code": None,
@@ -250,6 +435,7 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         "external_links": [],
         "images": [],
         "structured_data": [],
+        "freshness": {},
         "has_ssr_content": True,
         "security_headers": {},
         "errors": [],
@@ -261,9 +447,12 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         return result
 
     try:
+        request_headers = dict(DEFAULT_HEADERS)
+        if accept_language:
+            request_headers["Accept-Language"] = f"{accept_language},{accept_language};q=0.9,en;q=0.5"
         response = requests.get(
             url,
-            headers=DEFAULT_HEADERS,
+            headers=request_headers,
             timeout=timeout,
             allow_redirects=True,
         )
@@ -324,6 +513,10 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
                 result["structured_data"].append(data)
             except (json.JSONDecodeError, TypeError):
                 result["errors"].append("Invalid JSON-LD detected")
+
+        result["freshness"] = extract_freshness(
+            result["structured_data"], soup, result["headers"]
+        )
 
         # SSR check — must run BEFORE decompose() mutates the tree
         js_app_roots = soup.find_all(
@@ -401,28 +594,17 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
     parsed = urlparse(url)
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
-    ai_crawlers = [
-        "GPTBot",
-        "OAI-SearchBot",
-        "ChatGPT-User",
-        "ClaudeBot",
-        "anthropic-ai",
-        "PerplexityBot",
-        "CCBot",
-        "Bytespider",
-        "cohere-ai",
-        "Google-Extended",
-        "GoogleOther",
-        "Applebot-Extended",
-        "FacebookBot",
-        "Amazonbot",
-    ]
+    # Declared-policy analysis covers the ENTIRE roster — including retired
+    # and opt-out-token entries. A site can still carry rules for a token the
+    # operator no longer honours, and that's worth reporting.
+    ai_crawlers = list(AI_CRAWLERS.keys())
 
     result = {
         "url": robots_url,
         "exists": False,
         "content": "",
         "ai_crawler_status": {},
+        "stale_tokens": [],
         "sitemaps": [],
         "errors": [],
     }
@@ -488,6 +670,14 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
                         result["ai_crawler_status"][crawler] = "ALLOWED_BY_DEFAULT"
                 else:
                     result["ai_crawler_status"][crawler] = "NOT_MENTIONED"
+
+            # Flag retired tokens that the site still carries rules for —
+            # dead weight worth a cleanup recommendation (informational).
+            result["stale_tokens"] = [
+                name
+                for name, info in AI_CRAWLERS.items()
+                if info.get("status") == "retired" and name in agent_rules
+            ]
 
         elif response.status_code == 404:
             result["errors"].append("No robots.txt found (404)")
@@ -719,8 +909,11 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
          detection alone.
       3. Fingerprint WAF/CDN products from the baseline headers — this
          drives product-specific remediation in downstream skills.
-      4. Replay the request as each AI crawler in AI_CRAWLERS, comparing
-         status, body length, and content similarity to the baseline.
+      4. Replay the request as each ACTIVE AI crawler (see
+         active_crawlers() — retired and opt-out-only tokens are never
+         probed, and are reported in result["excluded_tokens"]),
+         comparing status, body length, and content similarity to the
+         baseline.
          A bot is considered blocked if any of:
             - status is 403, 406, 429, or 503
             - body matches Cloudflare challenge markers (200 with a
@@ -743,6 +936,14 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         "wafs_detected": [],
         "probes": [],
         "errors": [],
+        # Roster entries deliberately NOT probed, mapped to why. Lets the
+        # report layer explain the absence of e.g. a Google-Extended row
+        # instead of leaving a silent gap.
+        "excluded_tokens": {
+            name: info.get("status")
+            for name, info in AI_CRAWLERS.items()
+            if info.get("status", "active") != "active"
+        },
     }
 
     # Reject non-http(s) schemes before any network call. Mirrors the
@@ -799,7 +1000,7 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         result["js_challenge_detected"] and not result["baseline"]["used_playwright"]
     )
 
-    for bot_name, meta in AI_CRAWLERS.items():
+    for bot_name, meta in active_crawlers().items():
         bot_ua = meta["ua"]
         probe = {
             "bot": bot_name,
@@ -971,16 +1172,32 @@ def crawl_sitemap(url: str, max_pages: int = 50, timeout: int = 15) -> list:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python fetch_page.py <url> [mode]")
+
+    def _print_usage_and_exit():
+        print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, full")
         sys.exit(1)
+
+    if len(sys.argv) < 2:
+        _print_usage_and_exit()
+
+    accept_language = None
+    if "--accept-language" in sys.argv:
+        idx = sys.argv.index("--accept-language")
+        if idx + 1 < len(sys.argv):
+            accept_language = sys.argv[idx + 1]
+            del sys.argv[idx:idx + 2]
+
+    # Re-validate: stripping the flag may have consumed the only args present
+    # (e.g. `fetch_page.py --accept-language he` with no URL).
+    if len(sys.argv) < 2:
+        _print_usage_and_exit()
 
     target_url = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else "page"
 
     if mode == "page":
-        data = fetch_page(target_url)
+        data = fetch_page(target_url, accept_language=accept_language)
     elif mode == "robots":
         data = fetch_robots_txt(target_url)
     elif mode == "llms":
@@ -997,7 +1214,7 @@ if __name__ == "__main__":
         data = probe_ai_crawlers(target_url)
     elif mode == "full":
         data = {
-            "page": fetch_page(target_url),
+            "page": fetch_page(target_url, accept_language=accept_language),
             "robots": fetch_robots_txt(target_url),
             "llms": fetch_llms_txt(target_url),
             "sitemap": crawl_sitemap(target_url),

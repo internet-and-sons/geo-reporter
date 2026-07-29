@@ -24,40 +24,56 @@ Only **11% of domains** are cited by BOTH ChatGPT and Google AI Overviews for th
 
 ## Platform 1: Google AI Overviews (AIO)
 
-### How AIO Selects Sources
-- 92% of AIO citations come from pages already ranking in the **top 10 organic results** — traditional SEO is the gateway
-- However, 47% of citations come from pages ranking **below position 5** — AIO has its own selection logic favoring clarity and directness over raw rank
-- AIO strongly favors pages with **clean structure, direct answers, and scannable formatting**
-- Featured snippet optimization has ~70% overlap with AIO optimization
-- AIO prefers **concise, factual, unambiguous answers** — hedging and filler reduce citation probability
+### How Google's AI surfaces select sources (2026)
 
-### Optimization Checklist
+AI-generated answers are now Google's default search surface globally (confirmed July 2026). Two facts changed the optimization model:
 
-1. **Question-Based Headings**: Use H2/H3 headings phrased as questions matching real user queries. Check Google's "People Also Ask" for the target topic and mirror those exact phrasings.
-2. **Direct Answer in First Paragraph**: After each question heading, provide a clear 1-2 sentence answer immediately. Then expand with supporting detail. The first sentence should be a standalone citation candidate.
-3. **Tables and Structured Comparisons**: AIO heavily cites tables. Convert any comparison, pricing, specification, or feature data into HTML tables. Use clear column headers.
-4. **Ordered and Unordered Lists**: Step-by-step processes should use ordered lists. Feature lists should use unordered lists. AIO extracts these directly.
-5. **FAQ Sections**: Add a dedicated FAQ section with 5-10 real questions. Use proper H3 headings for each question. While FAQPage schema rich results are restricted to govt/health sites since Aug 2023, the content pattern still helps AIO extraction.
-6. **Definitions and Glossary Boxes**: For any industry-specific term, provide a clear definition. Format: "**[Term]** is [concise definition]." AIO frequently cites definitions.
-7. **Statistics with Sources**: Include specific numbers with attribution. "According to [Source], [statistic]." AIO prefers citeable, specific claims over vague assertions.
-8. **Publication Date**: Include a visible publication date and last-updated date. AIO deprioritizes undated content for time-sensitive queries.
-9. **Author Byline**: Display author name with credentials. Link to an author page with bio, credentials, and sameAs links.
-10. **Page Depth**: Keep target pages within 3 clicks of homepage. AIO rarely cites deep, orphaned content.
+1. **Rank decoupling.** Only ~38% of AI Overview citations come from the Google top-10 (down from 76% in mid-2025); a #1 ranking gives roughly a 33% citation probability. "Rank first, get cited" no longer holds.
+2. **Query fan-out.** One user query is decomposed into 8–15 parallel sub-queries; each sub-query retrieves *passages* independently. Pages ranking for fan-out sub-queries are ~161% more likely to be cited (0.77 correlation between fan-out rankings and citation).
+
+### Fan-out coverage check (run this)
+
+1. Take the page's head topic and enumerate its likely fan-out sub-queries: definition ("what is X"), mechanism ("how does X work"), comparison ("X vs Y"), cost/pricing, examples/best-of, requirements/how-to, recency ("X in 2026"), audience variants ("X for [segment]").
+2. For each sub-query, check whether the page contains a self-contained passage (heading + 40–60 word direct answer) that could answer it alone.
+3. Report coverage as N/M sub-queries covered, list the uncovered ones, and recommend covering them **on the same comprehensive page** — Google warns against page-per-variation sprawl.
+
+### Optimization checklist
+
+- Question-form H2/H3 headings matching fan-out sub-queries
+- A 40–60 word direct answer immediately under each question heading
+- Comparison tables (extractable) and definition patterns
+- Machine-readable dates (`<time datetime>`, Article schema dateModified) — freshness is a measured citation signal (~half of cited pages <13 weeks old)
+- Article/FAQPage schema where content genuinely matches the type
 
 ### Scoring Rubric (0-100)
 
 | Criterion | Points | How to Score |
 |---|---|---|
-| Ranks in top 10 for target queries | 20 | 20 if yes, 10 if top 20, 0 if beyond |
-| Question-based headings present | 10 | 2 points per question heading, max 10 |
-| Direct answers after headings | 15 | 3 points per direct answer, max 15 |
+| Fan-out sub-query coverage (N/M covered) | 20 | 20 if 80%+ of sub-queries covered, 10 if 40-79%, 0 if under 40% |
+| Question-based headings matching sub-queries | 10 | 2 points per question heading, max 10 |
+| 40-60 word direct answers after headings | 15 | 3 points per direct answer, max 15 |
 | Tables present for comparison data | 10 | 10 if tables used appropriately, 5 if partial, 0 if absent |
 | Lists for processes/features | 10 | 10 if present, 5 if partial |
 | FAQ section with 5+ questions | 10 | 10 if 5+, 5 if 1-4, 0 if none |
 | Statistics with citations | 10 | 2 points per cited stat, max 10 |
-| Publication/updated date visible | 5 | 5 if both dates, 3 if one, 0 if none |
+| Machine-readable publication/updated dates | 5 | 5 if both dates machine-readable, 3 if one or visible-only, 0 if none |
 | Author byline with credentials | 5 | 5 if full byline, 3 if name only, 0 if none |
 | Clean URL + heading hierarchy | 5 | 5 if H1>H2>H3 clean, 3 if minor issues, 0 if broken |
+
+---
+
+## Platform 1b: Google AI Mode
+
+AI Mode is the conversational search surface (multi-turn, zero blue links by default, "Deep Search" fan-outs that can exceed 100 sub-searches). Treat it as a distinct target from classic AIO:
+
+- **Zero-click by design:** ~93% of AI Mode sessions end without a click. The win condition is being *cited and named*, not ranked — brand visibility inside the answer is the metric.
+- **Optimization:** identical mechanics to the fan-out model above, plus entity strength (consistent Organization/Person schema with sameAs, third-party corroboration) so the brand is *named* even when not linked.
+- **Measurement caveat:** report to clients that AI Mode traffic largely won't appear in analytics; branded-search impressions and direct traffic are the observable proxies.
+
+## Platform notes: Grok and DeepSeek
+
+- **Grok (xAI):** optimize via the open web + X/Twitter presence (Grok grounds heavily on X content). No reliable crawler identity — see geo-botaccess's unverifiable-bots note.
+- **DeepSeek:** no published crawler identity; no platform-specific lever exists beyond general citability. Say so rather than inventing tactics.
 
 ---
 
@@ -148,6 +164,7 @@ Only **11% of domains** are cited by BOTH ChatGPT and Google AI Overviews for th
 - Gemini uses Google's Knowledge Graph directly — entity presence in Knowledge Graph is a major advantage
 - Structured data (Schema.org) is consumed directly by Gemini for entity understanding
 - Gemini multi-modal: can reference images, videos, and text together
+- Gemini models also power Google's AI Mode search surface — for that surface's fan-out and zero-click dynamics see **Platform 1b: Google AI Mode** above
 
 ### Optimization Checklist
 
@@ -227,14 +244,17 @@ Only **11% of domains** are cited by BOTH ChatGPT and Google AI Overviews for th
 5. Fast page load and clean HTML
 6. Author pages with credentials and sameAs links
 7. Regular content updates with visible dates
+8. Freshness: keep key pages updated inside a 13-week window; stamp dates machine-readably
 
 ### Platform-Specific Priorities
 | Priority | Google AIO | ChatGPT | Perplexity | Gemini | Copilot |
 |---|---|---|---|---|---|
-| #1 | Top-10 ranking | Wikipedia | Reddit presence | YouTube | IndexNow |
+| #1 | Fan-out coverage | Wikipedia | Reddit presence | YouTube | IndexNow |
 | #2 | Q&A structure | Entity graph | Original research | Knowledge Panel | Bing WMT |
 | #3 | Tables/lists | Bing SEO | Freshness | Schema.org | LinkedIn |
-| #4 | Featured snippets | Reddit | Community forums | GBP | Meta descriptions |
+| #4 | Freshness stamping | Reddit | Community forums | GBP | Meta descriptions |
+
+Platform overlap is small (11–12% of cited domains overlap between ChatGPT and Perplexity) — per-platform optimization is genuinely different work; use this matrix to allocate effort rather than duplicating one tactic everywhere.
 
 ---
 

@@ -66,7 +66,7 @@ Run the live probe (same `fetch_page.py` script used elsewhere in this audit, in
 python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> bots
 ```
 
-The probe fetches a Chrome baseline (with a Playwright fallback if Cloudflare serves a JS challenge), fingerprints the WAF/CDN in front of the site, then replays the request with 17 AI crawler user-agents — tagged by class (live-retrieval, search-index, traditional-search, training) so retrieval-bot blocks (the highest GEO impact) are scored separately from training-bot blocks (low GEO impact, often intentional). The output is a single JSON object with `baseline`, `js_challenge_detected`, `wafs_detected`, `probes[]`, `class_scores`, `verdict`, and `overall_score`.
+The probe fetches a Chrome baseline (with a Playwright fallback if Cloudflare serves a JS challenge), fingerprints the WAF/CDN in front of the site, then replays the request with every active AI crawler user-agent in the roster — tagged by class (live-retrieval, search-index, traditional-search, training) so retrieval-bot blocks (the highest GEO impact) are scored separately from training-bot blocks (low GEO impact, often intentional). The output is a single JSON object with `baseline`, `js_challenge_detected`, `wafs_detected`, `probes[]`, `class_scores`, `verdict`, and `overall_score`.
 
 **How to use the result in this audit:**
 

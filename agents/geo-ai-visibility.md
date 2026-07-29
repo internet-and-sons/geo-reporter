@@ -48,7 +48,8 @@ The output is a single JSON object with these fields — use them directly:
 |---|---|
 | `total_blocks_analyzed` | How many content blocks the scorer found (≥20 words each) |
 | `average_citability_score` | Mean score across all blocks (0–100) — this is the **Page Citability Score** |
-| `optimal_length_passages` | Count of passages in the 134–167 word "AI sweet spot" |
+| `optimal_length_passages` | Count of passages in the "AI sweet spot" (English 134–167 words; Hebrew 90–120 words) |
+| `language_distribution` | `{he, en}` block counts — see the bilingual note below |
 | `grade_distribution` | `{A, B, C, D, F}` block counts |
 | `top_5_citable[]` | Top 5 blocks by score — citation-ready passages (each entry has heading, content, word_count, score breakdown, grade) |
 | `bottom_5_citable[]` | Bottom 5 blocks — citation-unlikely areas, the targets for rewrite recommendations |
@@ -57,13 +58,16 @@ The output is a single JSON object with these fields — use them directly:
 Each block in `top_5_citable` / `bottom_5_citable` / `all_blocks` has:
 - `heading` (which section it came from), `content` (the passage text), `word_count`
 - `total_score` (0–100, weighted)
-- `breakdown` — per-dimension scores (`answer_block_quality`, `self_containment`, `structural_readability`, `statistical_density`, `uniqueness`)
-- `grade` — letter grade (A ≥85, B 70–84, C 55–69, D 40–54, F <40)
+- `breakdown` — per-dimension scores with these bucket maxima: `answer_block_quality` (30), `self_containment` (25), `structural_readability` (20), `statistical_density` (15), `uniqueness_signals` (10)
+- `grade` — letter grade (A ≥80, B 65–79, C 50–64, D 35–49, F <35)
+- `language` — `he` or `en`, detected per block
+
+**Bilingual scoring:** the scorer is Hebrew/English aware. Each block carries a `language` field and the page-level result carries `language_distribution`. Hebrew blocks are scored by a Hebrew-tuned engine with a 90–120-word optimal band (English stays at 134–167); dimensions, weights, and grade bands are identical across languages so scores stay comparable.
 
 In the report, surface:
 - Page Citability Score = `average_citability_score`
 - Top citation-ready passages: walk `top_5_citable` and report heading + first ~30 words of content + score
-- Citation-unlikely areas needing improvement: walk `bottom_5_citable`, report the same, and add a per-block rewrite suggestion (use the per-dimension breakdown to target the weakest dimension — e.g. if `statistical_density: 20`, suggest adding numbers/dates)
+- Citation-unlikely areas needing improvement: walk `bottom_5_citable`, report the same, and add a per-block rewrite suggestion (use the per-dimension breakdown to target the weakest dimension — e.g. if `statistical_density: 2` out of 15, suggest adding numbers/dates)
 
 The scoring rubric (which dimensions matter and how they're weighted) is documented in [`skills/geo-citability/SKILL.md`](../skills/geo-citability/SKILL.md). If `total_blocks_analyzed == 0`, the page has insufficient content for citability scoring — flag as a critical issue.
 
@@ -90,6 +94,7 @@ This fetches a baseline (Chrome user-agent + optional Playwright fallback if Clo
 | `class_scores` | Per-class scores (`live-retrieval`, `search-index`, `traditional-search`, `training`) — 0 to 100 |
 | `verdict` | One of `OPEN`, `HEALTHY_PUBLISHER`, `PARTIALLY_BLOCKED`, `MOSTLY_BLOCKED`, `BLOCKED` |
 | `overall_score` | Weighted: `0.5·live-retrieval + 0.35·traditional + 0.15·training` |
+| `excluded_tokens` | Map of roster entries that were NOT probed → reason (`retired` or `opt-out-token`). Render these as `— Not tested (<reason>)`; never leave the row blank or call it "Unverified" |
 
 Use the probe results — not your own robots.txt interpretation — as the per-bot status in the final table. Per-bot status comes from `probes[].verdict`: `allowed` (2xx + content matches baseline), `blocked` (4xx/5xx or challenge body), or `stripped` (200 OK but body suspiciously small / dissimilar to baseline — silent content-stripping).
 
@@ -113,19 +118,24 @@ The JSON output's `ai_crawler_status` field returns one of these per crawler:
 | `NOT_MENTIONED` | Neither bot-specific rules nor wildcard rules present |
 | `NO_ROBOTS_TXT` | No robots.txt file (404) — bot is implicitly permitted |
 
+The output also carries `stale_tokens` — retired crawler tokens the site's robots.txt still writes rules for. If non-empty, raise an informational finding recommending cleanup of the dead rules (no score impact).
+
 **Critical: do not re-parse robots.txt yourself.** The script's `fetch_robots_txt()` already handles `User-agent: *` wildcard inheritance correctly. Hand-rolled parsing in the past has produced false "Unverified" status on fully permissive sites (e.g. `User-agent: *` + empty `Disallow:` was mis-classified as "Unknown" when it actually means "Allowed via wildcard").
 
 #### Step 3c: Reconcile and render the final table
+
+Render statuses ONLY from the closed legend in REPORT-CONTRACT.md rule 2 — "Unverified" is banned.
 
 For each AI crawler, render a row built from BOTH signals — and explicitly flag mismatches:
 
 | Live probe | Declared (robots.txt) | Render as | Severity |
 |---|---|---|---|
-| ✅ Allowed (200, content matches) | Allowed / Allowed by default / No robots.txt | **✅ Allowed (live confirmed)** | OK |
-| ❌ Blocked (403/429/challenge) | Allowed / Allowed by default | **❌ Blocked by WAF (declared open)** — declared-vs-actual mismatch | **CRITICAL** — robots.txt invites the bot but a Cloudflare/WAF rule is silently rejecting it |
-| ❌ Blocked | Blocked | **❌ Blocked (intentional)** | OK if training-class bot and posture is HEALTHY_PUBLISHER; otherwise High |
-| ⚠️ Stripped (200, body dissimilar) | Allowed | **⚠️ Content stripped** — bot reaches the page but receives a different body than Chrome does | High |
-| ❌ Blocked | `NOT_MENTIONED` | **❌ Blocked (no declared rule)** | High — WAF override with no robots.txt context |
+| ✅ Allowed (200, content matches) | Allowed / Allowed by default / No robots.txt | **✅ Confirmed (tested live)** | OK |
+| ❌ Blocked (403/429/challenge) | Allowed / Allowed by default | **❌ Blocked by \<product\> (mismatch — declared open)** | **CRITICAL** — robots.txt invites the bot but a Cloudflare/WAF rule is silently rejecting it |
+| ❌ Blocked | Blocked | **❌ Blocked (declared, intentional)** | OK if training-class bot and posture is HEALTHY_PUBLISHER; otherwise High |
+| ⚠️ Stripped (200, body dissimilar) | Allowed | **⚠️ Content differs for bots** — bot reaches the page but receives a different body than Chrome does | High |
+| ❌ Blocked | `NOT_MENTIONED` | **❌ Blocked by \<product\> (mismatch — declared open)** | High — WAF override with no robots.txt context |
+| not probed (in `excluded_tokens`) | any | **— Not tested (\<reason\>)** — e.g. opt-out token, retired token | Informational |
 
 Show the WAF fingerprint (`wafs_detected`) and the probe verdict (`verdict`) above the table. If `verdict == HEALTHY_PUBLISHER` (training-class bots blocked, retrieval-class allowed — the NYT/WSJ/Reuters/BBC posture), say so explicitly and do not flag the training blocks as issues.
 
@@ -164,7 +174,7 @@ The validator fetches `/llms.txt` and `/llms-full.txt` from the domain root, par
 | `full_version.exists` | `/llms-full.txt` present |
 | `score` | **0–100, computed deterministically** from the booleans: 0 absent, 30 malformed, 50 valid minimal, 70 valid with ≥5 links and ≥2 sections, 90 same + llms-full.txt also present |
 
-Use `score` directly as the **llms.txt Score**. If `llms_txt.exists == false`, note the absence and recommend creation — the standalone `geo-llmstxt` skill can generate a template via `llmstxt_generator.py <url> generate` for site-type-specific output.
+Report `score` as the **llms.txt Score — informational only**. It does NOT feed the AI Visibility composite (see Step 7): no major AI platform reads llms.txt for citation. Frame it as useful for developer-facing sites serving coding agents, not as a citation lever. If `llms_txt.exists == false`, note the absence without treating it as a visibility problem — the standalone `geo-llmstxt` skill can generate a template via `llmstxt_generator.py <url> generate` for site-type-specific output.
 
 ### Step 5: Brand Mention Scanning
 
@@ -206,12 +216,14 @@ Compute the composite **AI Visibility Score (0-100)** using these weights:
 
 | Component | Weight |
 |---|---|
-| Citability Score | 35% |
+| Citability Score | 40% |
 | Brand Mention Score | 30% |
-| Crawler Access Score | 25% |
-| llms.txt Score | 10% |
+| Crawler Access Score | 30% |
+| llms.txt | informational — not scored |
 
-Formula: `AI_Visibility = (Citability * 0.35) + (Brand_Mentions * 0.30) + (Crawler_Access * 0.25) + (LLMS_TXT * 0.10)`
+Formula: `AI_Visibility = (Citability * 0.40) + (Brand_Mentions * 0.30) + (Crawler_Access * 0.30)`
+
+llms.txt is reported but NOT scored: no major AI platform reads it for citation (SE Ranking 300k-domain study: 97% of llms.txt files never fetched; Google states it does nothing for Search/AI Overviews). Keep the validator output as an informational line with this framing: useful for developer-facing sites serving coding agents; not a citation lever.
 
 ## Output Format
 
@@ -231,10 +243,10 @@ Score interpretation:
 
 | Component | Score | Weight | Weighted |
 |---|---|---|---|
-| Citability | [X]/100 | 35% | [X] |
+| Citability | [X]/100 | 40% | [X] |
 | Brand Mentions | [X]/100 | 30% | [X] |
-| Crawler Access | [X]/100 | 25% | [X] |
-| llms.txt | [X]/100 | 10% | [X] |
+| Crawler Access | [X]/100 | 30% | [X] |
+| llms.txt | [X]/100 | informational | informational |
 
 ### Citability Assessment
 
@@ -254,9 +266,13 @@ Citation-unlikely areas needing improvement:
 **WAF/CDN detected:** [Cloudflare / AWS WAF / Imperva / Akamai / none]
 **Overall posture:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED] (live probe verdict)
 
+Legend: ✅ Confirmed (tested live) · ❌ Blocked by <product> (mismatch — declared open) · ❌ Blocked (declared, intentional) · ⚠️ Content differs for bots · — Not tested (<reason>)
+
+Bots in the probe output's `excluded_tokens` (retired tokens, opt-out tokens like Google-Extended) render as `— Not tested (opt-out token — robots.txt declaration is the only signal that exists)` or `— Not tested (retired token)`. If `stale_tokens` from the robots output is non-empty, add an informational finding recommending cleanup of the dead rules.
+
 | Crawler | Live status | Declared (robots.txt) | Render | Notes |
 |---|---|---|---|---|
-| GPTBot | [200 / 403 / etc.] | [ALLOWED / ALLOWED_BY_DEFAULT / BLOCKED / NO_ROBOTS_TXT / etc.] | ✅ Allowed (live confirmed) / ❌ Blocked by WAF (declared open) / ❌ Blocked (intentional) / ⚠️ Content stripped | [Details] |
+| GPTBot | [200 / 403 / etc.] | [ALLOWED / ALLOWED_BY_DEFAULT / BLOCKED / NO_ROBOTS_TXT / etc.] | ✅ Confirmed (tested live) / ❌ Blocked by <product> (mismatch — declared open) / ❌ Blocked (declared, intentional) / ⚠️ Content differs for bots / — Not tested (<reason>) | [Details] |
 | OAI-SearchBot | [...] | [...] | [...] | [Details] |
 | ChatGPT-User | [...] | [...] | [...] | [Details] |
 | ClaudeBot | [...] | [...] | [...] | [Details] |
@@ -269,11 +285,11 @@ Citation-unlikely areas needing improvement:
 
 **Content Signals:** [Present — list parsed key=value pairs with plain-English meaning] / [Absent — Recommendation: add `Content-Signal:` directive to robots.txt. See https://contentsignals.org/]
 
-### llms.txt Status
+### llms.txt Status (informational — not scored)
 
 **Status:** [Present/Absent]
-**Score:** [X]/100
-[Validation details or recommendation to create]
+**Score:** [X]/100 (informational; excluded from the AI Visibility composite)
+[Validation details. Note that llms.txt is useful for developer-facing sites serving coding agents, but is not a citation lever — no major AI platform reads it for citation.]
 
 ### Brand Mention Presence
 

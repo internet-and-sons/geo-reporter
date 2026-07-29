@@ -86,7 +86,7 @@ These crawlers serve large AI platforms or search ecosystems. Allowing them incr
 - **User-Agent:** `GoogleOther`
 - **Purpose:** Used by Google for various non-search-ranking purposes including research, one-off crawls, and AI-related data collection.
 - **Impact of Blocking:** Minimal impact on search rankings. May reduce presence in Google's AI research and experimental features.
-- **Recommendation:** **ALLOW** -- Low risk, moderate potential benefit for AI feature inclusion.
+- **Recommendation:** **LEGACY / LOW-VALUE** -- No longer part of the recommended configuration. Harmless if already allowed; not worth adding.
 
 #### Applebot-Extended
 - **Operator:** Apple
@@ -106,9 +106,9 @@ These crawlers serve large AI platforms or search ecosystems. Allowing them incr
 #### FacebookBot
 - **Operator:** Meta
 - **User-Agent:** `FacebookBot`
-- **Purpose:** Used by Meta for AI features across Facebook, Instagram, WhatsApp, and Meta AI assistant.
-- **Impact of Blocking:** Content may not be accessible to Meta AI. Link previews on Facebook/Instagram are handled by a different crawler and are unaffected.
-- **Recommendation:** **ALLOW** -- Meta AI is embedded in apps with 3B+ combined users. Growing importance for AI visibility.
+- **Purpose:** Legacy Meta token. Meta's current AI fetcher is `Meta-ExternalAgent`, which is what belongs in a recommended configuration.
+- **Impact of Blocking:** None — Meta AI access is governed by `Meta-ExternalAgent`. Link previews are handled by a different crawler and are unaffected.
+- **Recommendation:** **RETIRED token — see "Retired tokens" below.** Recommend `Meta-ExternalAgent` instead.
 
 ---
 
@@ -127,9 +127,9 @@ These crawlers are primarily used for AI model training rather than live search 
 #### anthropic-ai
 - **Operator:** Anthropic
 - **User-Agent:** `anthropic-ai`
-- **Purpose:** Used by Anthropic for AI safety research and Claude model training. Separate from ClaudeBot (which powers live features).
-- **Impact of Blocking:** Content will not be used for Claude training. Does NOT affect Claude's live search or web browsing features (controlled by ClaudeBot).
-- **Recommendation:** **CONTEXT-DEPENDENT** -- Similar to CCBot. Allow for training presence, block for training data control. No impact on live AI search.
+- **Purpose:** Legacy token formerly used by Anthropic for training crawls. Anthropic's current fleet is ClaudeBot, Claude-SearchBot, and Claude-User.
+- **Impact of Blocking:** None — no crawler ships this user-agent any more.
+- **Recommendation:** **RETIRED token — see "Retired tokens" below.** Do not recommend allowing or blocking it. If a site's robots.txt still names it, report it as a cleanup item only.
 
 #### Bytespider
 - **Operator:** ByteDance
@@ -157,12 +157,12 @@ These crawlers are primarily used for AI model training rather than live search 
 | ClaudeBot | 1 | **ALLOW** | Claude web search and analysis |
 | PerplexityBot | 1 | **ALLOW** | Best referral traffic AI search |
 | Google-Extended | 2 | **ALLOW** | Gemini features; no search rank impact |
-| GoogleOther | 2 | **ALLOW** | Google AI research |
+| GoogleOther | 2 | Legacy / low-value | Dropped from the recommended config |
 | Applebot-Extended | 2 | **ALLOW** | Apple Intelligence (2B+ devices) |
 | Amazonbot | 2 | **ALLOW** | Alexa and Amazon AI |
-| FacebookBot | 2 | **ALLOW** | Meta AI (3B+ app users) |
+| FacebookBot | 2 | RETIRED token — see "Retired tokens" below | Superseded by Meta-ExternalAgent |
 | CCBot | 3 | Context | Training data only |
-| anthropic-ai | 3 | Context | Training data only |
+| anthropic-ai | 3 | RETIRED token — see "Retired tokens" below | No crawler ships this UA; cleanup item only |
 | Bytespider | 3 | **BLOCK** | Aggressive crawler, low benefit |
 | cohere-ai | 3 | Context | Training data only |
 
@@ -184,25 +184,34 @@ Allow: /
 User-agent: ClaudeBot
 Allow: /
 
-User-agent: anthropic-ai
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
 
-User-agent: Google-Extended
+User-agent: Perplexity-User
 Allow: /
 
-User-agent: GoogleOther
+User-agent: MistralAI-User
 Allow: /
 
-User-agent: Applebot-Extended
+User-agent: DuckAssistBot
 Allow: /
 
 User-agent: Amazonbot
 Allow: /
 
-User-agent: FacebookBot
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
 Allow: /
 
 # AI Crawlers - BLOCKED (aggressive/low value)
@@ -212,6 +221,20 @@ Disallow: /
 User-agent: CCBot
 Disallow: /
 ```
+
+Gone from previous versions of this recommendation: anthropic-ai (retired token), GoogleOther and FacebookBot (legacy/low-value).
+
+### Retired tokens — flag, don't recommend
+
+`anthropic-ai`, `claude-web`, and `FacebookBot` are retired legacy tokens. Never include them in recommended configurations. When a site's robots.txt still carries rules for them (surfaced in the `stale_tokens` field of `fetch_page.py <url> robots` output), report it as an informational cleanup item: the rules are dead weight and signal an unmaintained robots.txt.
+
+### Opt-out tokens are not crawlers
+
+`Google-Extended` and `Applebot-Extended` never fetch pages — they are robots.txt signals the operators honour separately. They belong in robots.txt recommendations (above) but have no meaningful live-probe result; the probe excludes them (see `excluded_tokens`).
+
+### Fetchers that ignore robots.txt
+
+`Google-Agent` (user-triggered agent fetches) generally does not consult robots.txt. Its declared status in a robots.txt table is close to meaningless — the live probe (`geo-botaccess`) is the only signal that matters for it. Never recommend a robots.txt rule as a way to control it; WAF-level rules are the real lever.
 
 ---
 
@@ -329,11 +352,12 @@ Generate a file called `GEO-CRAWLER-ACCESS.md`:
 | GoogleOther | Google | 2 | [Status] | [Impact] |
 | Applebot-Extended | Apple | 2 | [Status] | [Impact] |
 | Amazonbot | Amazon | 2 | [Status] | [Impact] |
-| FacebookBot | Meta | 2 | [Status] | [Impact] |
+| Meta-ExternalAgent | Meta | 2 | [Status] | [Impact] |
 | CCBot | Common Crawl | 3 | [Status] | [Impact] |
-| anthropic-ai | Anthropic | 3 | [Status] | [Impact] |
 | Bytespider | ByteDance | 3 | [Status] | [Impact] |
 | cohere-ai | Cohere | 3 | [Status] | [Impact] |
+
+**Retired tokens still present:** [list any tokens from the `stale_tokens` field — cleanup item, not an access status. Write "None" if the field is empty.]
 
 ## AI Visibility Score: [X]/100
 
