@@ -24,6 +24,7 @@ Or pipe JSON data from stdin:
 import sys
 import json
 import os
+import re
 from datetime import datetime
 
 try:
@@ -297,7 +298,141 @@ def build_styles():
         alignment=TA_CENTER,
     ))
 
+    # --- TL;DR block (executive summary) ---
+    styles.add(ParagraphStyle(
+        name='TldrLead',
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=PRIMARY,
+        spaceBefore=2,
+        spaceAfter=6,
+        leading=16,
+        alignment=TA_LEFT,
+    ))
+
+    styles.add(ParagraphStyle(
+        name='TldrAction',
+        fontName='Helvetica',
+        fontSize=10,
+        textColor=TEXT_PRIMARY,
+        leftIndent=12,
+        spaceBefore=3,
+        spaceAfter=3,
+        leading=14,
+        alignment=TA_LEFT,
+    ))
+
     return styles
+
+
+# ============================================================
+# TL;DR RENDERING
+# ============================================================
+
+_BOLD_SPAN = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_NUMBERED_LINE = re.compile(r"^\s*\d+\.\s")
+
+
+def _resolve_style(styles, *names):
+    """Return the first style present in the stylesheet, falling back to Normal."""
+    for name in names:
+        try:
+            return styles[name]
+        except KeyError:
+            continue
+    return styles['Normal']
+
+
+def _to_inline_markup(text):
+    """Escape XML-significant characters, then convert **bold** to <b>bold</b>.
+
+    Escaping happens FIRST so that client-supplied text (a brand name containing
+    '&', an action mentioning '<robots.txt>') can never break ReportLab's parser.
+    """
+    escaped = (text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;"))
+    return _BOLD_SPAN.sub(r"<b>\1</b>", escaped)
+
+
+def _is_structured_tldr(text):
+    """True when the summary carries TL;DR structure (bold lead and/or numbered actions)."""
+    if _BOLD_SPAN.search(text):
+        return True
+    return any(_NUMBERED_LINE.match(line) for line in text.splitlines())
+
+
+def _split_tldr_blocks(text):
+    """Split a TL;DR into (kind, text) blocks, kind in {'line', 'action'}.
+
+    Each source line becomes its own block, except that continuation lines
+    following a numbered action are folded into that action.
+    """
+    blocks = []
+    current_kind = None
+    current_lines = []
+
+    def flush():
+        nonlocal current_kind, current_lines
+        if current_lines:
+            blocks.append((current_kind, " ".join(current_lines).strip()))
+        current_kind = None
+        current_lines = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush()
+            continue
+        if _NUMBERED_LINE.match(raw_line):
+            flush()
+            current_kind = 'action'
+            current_lines = [line]
+        elif current_kind == 'action':
+            current_lines.append(line)
+        else:
+            flush()
+            current_kind = 'line'
+            current_lines = [line]
+
+    flush()
+    return [(kind, body) for kind, body in blocks if body]
+
+
+def render_tldr_flowables(summary_text, styles):
+    """Render the executive-summary TL;DR into a list of ReportLab flowables.
+
+    Structured input (a **bold** lead line and/or lines starting with '1.', '2.', …)
+    is broken into a lead paragraph, the posture line(s), and one indented paragraph
+    per numbered action. Unstructured prose — pre-v0.4.0 audit JSON — returns exactly
+    one Paragraph, identical to how it has always rendered. Empty input returns [],
+    so the caller can skip the section.
+    """
+    if not summary_text or not summary_text.strip():
+        return []
+
+    body_style = _resolve_style(styles, 'BodyText_Custom', 'BodyText')
+
+    if not _is_structured_tldr(summary_text):
+        # Backwards compatible: legacy prose summaries render verbatim, as before.
+        return [Paragraph(summary_text, body_style)]
+
+    lead_style = _resolve_style(styles, 'TldrLead', 'BodyText_Custom', 'BodyText')
+    action_style = _resolve_style(styles, 'TldrAction', 'Recommendation')
+    if getattr(action_style, 'leftIndent', 0) <= 0:
+        action_style = ParagraphStyle('TldrActionFallback', parent=body_style, leftIndent=12)
+
+    flowables = []
+    for kind, block in _split_tldr_blocks(summary_text):
+        if kind == 'action':
+            style = action_style
+        elif not flowables:
+            style = lead_style
+        else:
+            style = body_style
+        flowables.append(Paragraph(_to_inline_markup(block), style))
+
+    return flowables
 
 
 def header_footer(canvas, doc):
@@ -460,8 +595,9 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
     elements.append(Paragraph("Executive Summary", styles['SectionHeader']))
     elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceAfter=12))
 
-    if executive_summary:
-        elements.append(Paragraph(executive_summary, styles['BodyText_Custom']))
+    tldr_flowables = render_tldr_flowables(executive_summary, styles)
+    if tldr_flowables:
+        elements.extend(tldr_flowables)
     else:
         elements.append(Paragraph(
             f"This report presents the findings of a comprehensive Generative Engine Optimization (GEO) "
