@@ -43,6 +43,22 @@ except ImportError:
 #                    and Bing/Copilot. Blocking is almost always a
 #                    misconfiguration and worth flagging loudly.
 #
+# Each entry also carries a "status" (defaulting to "active" when
+# absent), because the roster is the single source of truth for BOTH
+# the live probe and the robots.txt declared-policy parser:
+#
+#   active        — real, currently-operating crawler. Probed live.
+#   retired       — legacy token the operator no longer fetches with
+#                   (anthropic-ai, claude-web, FacebookBot). Kept so
+#                   robots.txt analysis can spot stale configs; never
+#                   probed, because a 403 for a UA nobody sends is noise.
+#   opt-out-token — robots.txt signal only (Google-Extended,
+#                   Applebot-Extended). The operator never fetches with
+#                   this UA, so probing measures WAF UA-filtering and
+#                   nothing else. Declared-policy analysis only.
+#
+# Use active_crawlers() for anything that hits the network.
+#
 # See OpenAI/Anthropic/Perplexity bot docs and the Cloudflare/Botify
 # 2025 publisher-log analyses cited in the geo-botaccess SKILL.md.
 AI_CRAWLERS = {
@@ -78,11 +94,6 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Anthropic",
     },
-    "anthropic-ai": {
-        "ua": "anthropic-ai/1.0",
-        "class": "training",
-        "operator": "Anthropic",
-    },
     # Perplexity
     "PerplexityBot": {
         "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
@@ -94,6 +105,50 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Perplexity",
     },
+    # Mistral
+    "MistralAI-User": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-User/1.0; +https://docs.mistral.ai/robots)",
+        "class": "live-retrieval",
+        "operator": "Mistral",
+    },
+    # DuckDuckGo
+    "DuckAssistBot": {
+        "ua": "Mozilla/5.0 (compatible; DuckAssistBot/1.2; +http://duckduckgo.com/duckassistbot.html)",
+        "class": "search-index",
+        "operator": "DuckDuckGo",
+    },
+    # Google agentic / grounding fetchers (Web Bot Auth signer; a plain
+    # UA replay approximates WAF UA-filtering only, not signature checks)
+    "Google-Agent": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent) Chrome/138.0.0.0 Safari/537.36",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    "Google-CloudVertexBot": {
+        "ua": "Mozilla/5.0 (compatible; Google-CloudVertexBot/1.0; +http://www.google.com/bot.html)",
+        "class": "training",
+        "operator": "Google",
+    },
+    # Google-NotebookLM is the LEGACY token for the Gemini Notebook
+    # fetcher. Google renamed it to Google-GeminiNotebook and supports
+    # the old spelling only through August 2026 — probe both until then,
+    # then flip Google-NotebookLM to status "retired".
+    "Google-NotebookLM": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-NotebookLM; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    "Google-GeminiNotebook": {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-GeminiNotebook; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
+        "class": "live-retrieval",
+        "operator": "Google",
+    },
+    # Amazon
+    "Amazonbot": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1) Chrome/119.0.0.0 Safari/537.36",
+        "class": "search-index",
+        "operator": "Amazon",
+    },
     # Google / Apple training opt-out tokens. These aren't real crawlers
     # — they're robots.txt signals that the operator honours separately.
     # Probing them tests only WAF-side UA filtering; treat results as
@@ -102,11 +157,13 @@ AI_CRAWLERS = {
         "ua": "Mozilla/5.0 (compatible; Google-Extended/1.0; +http://www.google.com/bot.html)",
         "class": "training",
         "operator": "Google",
+        "status": "opt-out-token",
     },
     "Applebot-Extended": {
         "ua": "Mozilla/5.0 (compatible; Applebot-Extended/1.0)",
         "class": "training",
         "operator": "Apple",
+        "status": "opt-out-token",
     },
     # Traditional search bots (blocking these is usually a mistake).
     # Surface separately because Googlebot 403 also kills regular
@@ -143,6 +200,26 @@ AI_CRAWLERS = {
         "class": "training",
         "operator": "Cohere",
     },
+    # Retired legacy tokens — declared-policy analysis + stale-config
+    # detection only; never probed live.
+    "anthropic-ai": {
+        "ua": "anthropic-ai/1.0",
+        "class": "training",
+        "operator": "Anthropic",
+        "status": "retired",
+    },
+    "claude-web": {
+        "ua": "claude-web/1.0",
+        "class": "training",
+        "operator": "Anthropic",
+        "status": "retired",
+    },
+    "FacebookBot": {
+        "ua": "FacebookBot/1.0 (+http://www.facebook.com/bot.html)",
+        "class": "training",
+        "operator": "Meta",
+        "status": "retired",
+    },
 }
 
 # The four bot classes, in priority order for verdict logic. The
@@ -154,6 +231,19 @@ BOT_CLASSES = (
     "traditional-search",
     "training",
 )
+
+
+def active_crawlers() -> dict:
+    """Subset of AI_CRAWLERS that are real, currently-operating crawlers.
+
+    The live probe uses ONLY this subset. Retired tokens and opt-out
+    tokens stay in AI_CRAWLERS for declared-policy (robots.txt) analysis.
+    """
+    return {
+        name: info
+        for name, info in AI_CRAWLERS.items()
+        if info.get("status", "active") == "active"
+    }
 
 # Back-compat alias for callers and tests that still reference the
 # flat "AI search bots" set. New code should use AI_CRAWLERS[name]["class"].
