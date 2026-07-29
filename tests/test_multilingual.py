@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from fetch_page import fetch_page
+from brand_scanner import check_wikipedia_presence, generate_brand_report
 
 
 def _resp(status=200, text="<html><head><title>t</title></head><body><p>hello world content</p></body></html>"):
@@ -41,3 +42,40 @@ def test_cli_flag_without_url_prints_usage(tmp_path):
     )
     assert proc.returncode == 1
     assert "Usage:" in proc.stdout
+
+
+def _json_resp(payload):
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.json.return_value = payload
+    return mock
+
+
+def test_hebrew_wikipedia_presence_detected():
+    """Brand with a he.wikipedia article and no en article must count as present."""
+    def fake_get(url, **kwargs):
+        if "he.wikipedia.org" in url:
+            return _json_resp({"query": {"search": [{"title": "מותג בדיקה"}]}})
+        if "en.wikipedia.org" in url:
+            return _json_resp({"query": {"search": []}})
+        return _json_resp({"search": []})  # wikidata
+
+    with patch("brand_scanner.requests.get", side_effect=fake_get):
+        result = check_wikipedia_presence("מותג בדיקה", languages=("en", "he"))
+    assert result["has_wikipedia_page"] is True
+    assert result["languages"]["he"]["found"] is True
+    assert result["languages"]["en"]["found"] is False
+
+
+def test_default_languages_include_en_and_he():
+    with patch("brand_scanner.requests.get", return_value=_json_resp({"query": {"search": []}, "search": []})) as mock_get:
+        check_wikipedia_presence("Some Brand")
+    urls = [c.args[0] for c in mock_get.call_args_list]
+    assert any("en.wikipedia.org" in u for u in urls)
+    assert any("he.wikipedia.org" in u for u in urls)
+
+
+def test_brand_report_passes_languages_through():
+    with patch("brand_scanner.requests.get", return_value=_json_resp({"query": {"search": []}, "search": []})):
+        report = generate_brand_report("Some Brand", languages=("en", "he"))
+    assert "languages" in report["platforms"]["wikipedia"]

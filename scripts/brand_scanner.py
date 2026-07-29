@@ -101,8 +101,14 @@ def check_reddit_presence(brand_name: str) -> dict:
     return result
 
 
-def check_wikipedia_presence(brand_name: str) -> dict:
-    """Check brand/entity presence on Wikipedia and Wikidata."""
+def check_wikipedia_presence(brand_name: str, languages=("en", "he")) -> dict:
+    """Check brand/entity presence on Wikipedia and Wikidata.
+
+    Wikipedia is checked once per language in `languages`; a hit in ANY
+    language counts as presence. Bilingual (e.g. Hebrew/English) brands with
+    an article in only one language would otherwise be scored as absent.
+    """
+    primary_lang = languages[0] if languages else "en"
     result = {
         "platform": "Wikipedia",
         "correlation": "High",
@@ -110,40 +116,54 @@ def check_wikipedia_presence(brand_name: str) -> dict:
         "has_wikipedia_page": False,
         "has_wikidata_entry": False,
         "cited_in_articles": False,
-        "search_url": f"https://en.wikipedia.org/wiki/Special:Search?search={quote_plus(brand_name)}",
+        "languages": {},
+        "search_url": f"https://{primary_lang}.wikipedia.org/wiki/Special:Search?search={quote_plus(brand_name)}",
         "wikidata_url": f"https://www.wikidata.org/w/index.php?search={quote_plus(brand_name)}",
         "recommendations": [],
     }
 
-    # Check Wikipedia API
-    try:
-        api_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={quote_plus(brand_name)}&format=json"
-        response = requests.get(api_url, headers=DEFAULT_HEADERS, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            search_results = data.get("query", {}).get("search", [])
-            if search_results:
-                # Check if top result is about the brand
-                top_title = search_results[0].get("title", "").lower()
-                if brand_name.lower() in top_title:
-                    result["has_wikipedia_page"] = True
-                result["wikipedia_search_results"] = len(search_results)
-    except Exception:
-        pass
+    # Check the Wikipedia API once per language
+    for lang in languages:
+        lang_result = {"found": False, "title": None}
+        try:
+            api_url = (
+                f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
+                f"&srsearch={quote_plus(brand_name)}&format=json"
+            )
+            response = requests.get(api_url, headers=DEFAULT_HEADERS, timeout=15)
+            if response.status_code == 200:
+                search_results = response.json().get("query", {}).get("search", [])
+                if search_results:
+                    top_title = search_results[0].get("title", "")
+                    if brand_name.lower() in top_title.lower():
+                        lang_result["found"] = True
+                        lang_result["title"] = top_title
+                    result["wikipedia_search_results"] = len(search_results)
+        except Exception:
+            pass
+        result["languages"][lang] = lang_result
 
-    # Check Wikidata
-    try:
-        wikidata_url = f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={quote_plus(brand_name)}&language=en&format=json"
-        response = requests.get(wikidata_url, headers=DEFAULT_HEADERS, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            entities = data.get("search", [])
-            if entities:
-                result["has_wikidata_entry"] = True
-                result["wikidata_id"] = entities[0].get("id", "")
-                result["wikidata_description"] = entities[0].get("description", "")
-    except Exception:
-        pass
+    result["has_wikipedia_page"] = any(
+        entry["found"] for entry in result["languages"].values()
+    )
+
+    # Check Wikidata — first language that returns a hit wins
+    for lang in languages:
+        try:
+            wd_api_url = (
+                f"https://www.wikidata.org/w/api.php?action=wbsearchentities"
+                f"&search={quote_plus(brand_name)}&language={lang}&format=json"
+            )
+            response = requests.get(wd_api_url, headers=DEFAULT_HEADERS, timeout=15)
+            if response.status_code == 200:
+                entities = response.json().get("search", [])
+                if entities:
+                    result["has_wikidata_entry"] = True
+                    result["wikidata_id"] = entities[0].get("id", "")
+                    result["wikidata_description"] = entities[0].get("description", "")
+                    break
+        except Exception:
+            pass
 
     result["recommendations"] = [
         "If eligible, create a Wikipedia article (requires notability criteria)",
@@ -230,7 +250,7 @@ def check_other_platforms(brand_name: str) -> dict:
     return result
 
 
-def generate_brand_report(brand_name: str, domain: str = None) -> dict:
+def generate_brand_report(brand_name: str, domain: str = None, languages=("en", "he")) -> dict:
     """Generate a comprehensive brand mention report."""
     report = {
         "brand_name": brand_name,
@@ -244,7 +264,7 @@ def generate_brand_report(brand_name: str, domain: str = None) -> dict:
     # Check all platforms
     report["platforms"]["youtube"] = check_youtube_presence(brand_name)
     report["platforms"]["reddit"] = check_reddit_presence(brand_name)
-    report["platforms"]["wikipedia"] = check_wikipedia_presence(brand_name)
+    report["platforms"]["wikipedia"] = check_wikipedia_presence(brand_name, languages=languages)
     report["platforms"]["linkedin"] = check_linkedin_presence(brand_name)
     report["platforms"]["other"] = check_other_platforms(brand_name)
 
@@ -309,12 +329,13 @@ def compute_brand_score(report: dict) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python brand_scanner.py <brand_name> [domain]")
-        print("Example: python brand_scanner.py 'Acme Corp' acmecorp.com")
+        print("Usage: python brand_scanner.py <brand_name> [domain] [langs]")
+        print("Example: python brand_scanner.py 'Acme Corp' acmecorp.com en,he")
         sys.exit(1)
 
     brand = sys.argv[1]
     domain = sys.argv[2] if len(sys.argv) > 2 else None
+    langs = tuple(sys.argv[3].split(",")) if len(sys.argv) > 3 else ("en", "he")
 
-    result = generate_brand_report(brand, domain)
+    result = generate_brand_report(brand, domain, languages=langs)
     print(json.dumps(result, indent=2, default=str))
