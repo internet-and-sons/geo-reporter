@@ -334,6 +334,11 @@ def extract_freshness(structured_data, soup, headers) -> dict:
     AI-citation signal (~50% of cited pages <13 weeks old, Ahrefs 2026);
     'unknown' means undated content — itself a finding, since AI engines
     can't verify recency without a machine-readable date.
+
+    Tiers: fresh <90d, aging 90-365d, stale 365-730d, very-stale >730d,
+    future-dated when the date is ahead of now, unknown when no date is
+    discoverable. 'future-dated' is a markup defect, not fresh content —
+    age_days stays negative as evidence rather than being clamped.
     """
     result = {
         "date_published": None,
@@ -390,9 +395,12 @@ def extract_freshness(structured_data, soup, headers) -> dict:
         result["best_date"] = str(raw)
         result["age_days"] = age
         result["source"] = source
-        result["tier"] = next(
-            (tier for limit, tier in FRESHNESS_TIERS if age < limit), "very-stale"
-        )
+        if age < 0:
+            result["tier"] = "future-dated"
+        else:
+            result["tier"] = next(
+                (tier for limit, tier in FRESHNESS_TIERS if age < limit), "very-stale"
+            )
         break
 
     return result

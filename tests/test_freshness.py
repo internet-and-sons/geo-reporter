@@ -3,7 +3,8 @@
 ~Half of AI-cited pages were published/updated within the prior 13 weeks
 (Ahrefs 2026). fetch_page now extracts dates and assigns a tier:
   fresh < 90d, aging 90-365d, stale 365-730d, very-stale > 730d,
-  unknown when no date is discoverable.
+  future-dated when the date is ahead of now, unknown when no date is
+  discoverable.
 Tests generate dates relative to now so they never go stale.
 """
 
@@ -55,6 +56,13 @@ def test_no_date_is_unknown():
     result = extract_freshness([], None, {})
     assert result["tier"] == "unknown"
     assert result["age_days"] is None
+
+
+def test_future_dated_content_flagged_as_markup_defect():
+    sd = [{"@type": "Article", "datePublished": _days_ago(-365)}]
+    result = extract_freshness(sd, None, {})
+    assert result["tier"] == "future-dated"
+    assert result["age_days"] < 0
 
 
 def test_unparseable_date_is_unknown_not_crash():
