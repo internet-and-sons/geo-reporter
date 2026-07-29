@@ -491,28 +491,17 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
     parsed = urlparse(url)
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
-    ai_crawlers = [
-        "GPTBot",
-        "OAI-SearchBot",
-        "ChatGPT-User",
-        "ClaudeBot",
-        "anthropic-ai",
-        "PerplexityBot",
-        "CCBot",
-        "Bytespider",
-        "cohere-ai",
-        "Google-Extended",
-        "GoogleOther",
-        "Applebot-Extended",
-        "FacebookBot",
-        "Amazonbot",
-    ]
+    # Declared-policy analysis covers the ENTIRE roster — including retired
+    # and opt-out-token entries. A site can still carry rules for a token the
+    # operator no longer honours, and that's worth reporting.
+    ai_crawlers = list(AI_CRAWLERS.keys())
 
     result = {
         "url": robots_url,
         "exists": False,
         "content": "",
         "ai_crawler_status": {},
+        "stale_tokens": [],
         "sitemaps": [],
         "errors": [],
     }
@@ -578,6 +567,14 @@ def fetch_robots_txt(url: str, timeout: int = 15) -> dict:
                         result["ai_crawler_status"][crawler] = "ALLOWED_BY_DEFAULT"
                 else:
                     result["ai_crawler_status"][crawler] = "NOT_MENTIONED"
+
+            # Flag retired tokens that the site still carries rules for —
+            # dead weight worth a cleanup recommendation (informational).
+            result["stale_tokens"] = [
+                name
+                for name, info in AI_CRAWLERS.items()
+                if info.get("status") == "retired" and name in agent_rules
+            ]
 
         elif response.status_code == 404:
             result["errors"].append("No robots.txt found (404)")

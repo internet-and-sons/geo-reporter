@@ -13,10 +13,11 @@ the robots.txt parser. Every entry has a status:
 
 import sys
 import os
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from fetch_page import AI_CRAWLERS, BOT_CLASSES, active_crawlers
+from fetch_page import AI_CRAWLERS, BOT_CLASSES, active_crawlers, fetch_robots_txt
 
 
 def test_every_entry_has_valid_status():
@@ -64,3 +65,34 @@ def test_active_crawlers_helper_excludes_non_active():
     assert "FacebookBot" not in act
     for name in act:
         assert AI_CRAWLERS[name].get("status", "active") == "active"
+
+
+def _resp(status=200, text=""):
+    mock = MagicMock()
+    mock.status_code = status
+    mock.text = text
+    return mock
+
+
+def test_robots_parser_covers_entire_roster():
+    """Declared-policy analysis covers ALL roster entries (incl. retired/opt-out)."""
+    with patch("fetch_page.requests.get", return_value=_resp(200, "User-agent: *\nDisallow:\n")):
+        result = fetch_robots_txt("https://example.com")
+    assert set(result["ai_crawler_status"].keys()) == set(AI_CRAWLERS.keys())
+
+
+def test_stale_tokens_flagged_when_present_in_robots():
+    robots = (
+        "User-agent: anthropic-ai\nAllow: /\n\n"
+        "User-agent: GPTBot\nAllow: /\n"
+    )
+    with patch("fetch_page.requests.get", return_value=_resp(200, robots)):
+        result = fetch_robots_txt("https://example.com")
+    assert "anthropic-ai" in result["stale_tokens"]
+    assert "GPTBot" not in result["stale_tokens"]
+
+
+def test_stale_tokens_empty_when_none_present():
+    with patch("fetch_page.requests.get", return_value=_resp(200, "User-agent: *\nDisallow:\n")):
+        result = fetch_robots_txt("https://example.com")
+    assert result["stale_tokens"] == []
