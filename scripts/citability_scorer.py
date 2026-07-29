@@ -19,6 +19,8 @@ optimal-length window differ. That keeps cross-language scores comparable.
 import sys
 import json
 import re
+import difflib
+from collections import Counter
 from typing import Optional
 
 try:
@@ -444,6 +446,124 @@ def score_passage(text: str, heading: Optional[str] = None) -> dict:
 # Page-level analysis (unchanged interface)
 # ---------------------------------------------------------------------------
 
+# Small inline stopword set (len >= 4 function words) so keyword-stuffing
+# detection doesn't fire on ordinary connective vocabulary.
+_NEG_STOPWORDS = frozenset({
+    "this", "that", "with", "from", "have", "will", "your", "their", "which",
+    "about", "would", "there", "been", "were", "they", "what", "when", "them",
+    "then", "than", "some", "such", "into", "only", "more", "most", "other",
+    "also", "because", "these", "those", "here", "them", "over", "under",
+    "each", "both", "very", "just", "like", "much", "many",
+})
+
+# Vocabulary that marks CTA / navigation / share chrome rather than prose.
+_CHROME_TERMS = (
+    "share", "subscribe", "sign up", "log in", "copy link", "print",
+    "follow us", "newsletter", "cookie",
+)
+
+# Byline / author signals searched over the page body text.
+_BYLINE_PATTERNS = (
+    re.compile(r"\b[Bb]y [A-Z][a-z]+"),
+    re.compile(r"written by", re.IGNORECASE),
+    re.compile(r"author:", re.IGNORECASE),
+)
+
+
+def _compute_negative_signals(blocks: list) -> dict:
+    """Informational-only page-level negative signals.
+
+    Computed purely from already-fetched content blocks (no new network
+    calls). Does NOT feed into any per-block score, grade, or average — this
+    is a diagnostic overlay only.
+
+    ``blocks`` is a list of {"heading": str, "content": str}.
+    """
+    total = len(blocks)
+    if total == 0:
+        note = "insufficient content to assess"
+        return {
+            "keyword_stuffing": {"value": 0.0, "flagged": False, "note": note},
+            "cta_chrome_ratio": {"value": 0.0, "flagged": False, "note": note},
+            "boilerplate_ratio": {"value": 0.0, "flagged": False, "note": note},
+            "missing_author": {"value": False, "flagged": False, "note": note},
+        }
+
+    contents = [b.get("content", "") for b in blocks]
+    body = " ".join(contents)
+
+    # --- keyword_stuffing: top meaningful-token frequency ratio over body ----
+    tokens = [
+        t for t in re.findall(r"[^\W\d_]{4,}", body.lower())
+        if t not in _NEG_STOPWORDS
+    ]
+    if tokens:
+        top_count = Counter(tokens).most_common(1)[0][1]
+        ks_value = round(top_count / len(tokens), 4)
+    else:
+        ks_value = 0.0
+    keyword_stuffing = {
+        "value": ks_value,
+        "flagged": ks_value > 0.06,
+        "note": ("Princeton KDD-2024 measured keyword stuffing at roughly "
+                 "-10% citation likelihood."),
+    }
+
+    # --- cta_chrome_ratio: share of short chrome/nav/share blocks ------------
+    chrome_blocks = 0
+    for text in contents:
+        wc = len(text.split())
+        lowered = text.lower()
+        if wc <= 40 and any(term in lowered for term in _CHROME_TERMS):
+            chrome_blocks += 1
+    cta_value = round(chrome_blocks / total, 4)
+    cta_chrome_ratio = {
+        "value": cta_value,
+        "flagged": cta_value > 0.30,
+        "note": ("CTA/nav/share chrome dilutes citable prose; AI engines "
+                 "favour substantive passages over interface boilerplate."),
+    }
+
+    # --- boilerplate_ratio: near-duplicate blocks on the same page -----------
+    norms = [re.sub(r"\s+", " ", c.strip().lower()) for c in contents]
+    duplicate_blocks = 0
+    for i, a in enumerate(norms):
+        if not a:
+            continue
+        is_dup = False
+        for j, b in enumerate(norms):
+            if i == j or not b:
+                continue
+            if a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.9:
+                is_dup = True
+                break
+        if is_dup:
+            duplicate_blocks += 1
+    bp_value = round(duplicate_blocks / total, 4)
+    boilerplate_ratio = {
+        "value": bp_value,
+        "flagged": bp_value > 0.25,
+        "note": ("Repeated near-duplicate blocks read as boilerplate and "
+                 "lower the density of unique, citable content."),
+    }
+
+    # --- missing_author: no byline signal anywhere in the body --------------
+    has_byline = any(p.search(body) for p in _BYLINE_PATTERNS)
+    missing_author = {
+        "value": not has_byline,
+        "flagged": not has_byline,
+        "note": ("AI engines weight author expertise; add a visible byline + "
+                 "Person schema."),
+    }
+
+    return {
+        "keyword_stuffing": keyword_stuffing,
+        "cta_chrome_ratio": cta_chrome_ratio,
+        "boilerplate_ratio": boilerplate_ratio,
+        "missing_author": missing_author,
+    }
+
+
 def analyze_page_citability(url: str) -> dict:
     """Analyze all content blocks on a page for citability."""
     try:
@@ -513,6 +633,7 @@ def analyze_page_citability(url: str) -> dict:
         "top_5_citable": top_blocks,
         "bottom_5_citable": bottom_blocks,
         "all_blocks": scored_blocks,
+        "negative_signals": _compute_negative_signals(blocks),
     }
 
 
