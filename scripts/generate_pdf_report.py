@@ -24,6 +24,7 @@ Or pipe JSON data from stdin:
 import sys
 import json
 import os
+import re
 from datetime import datetime
 
 try:
@@ -297,7 +298,166 @@ def build_styles():
         alignment=TA_CENTER,
     ))
 
+    # --- TL;DR block (executive summary) ---
+    styles.add(ParagraphStyle(
+        name='TldrLead',
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=PRIMARY,
+        spaceBefore=2,
+        spaceAfter=6,
+        leading=16,
+        alignment=TA_LEFT,
+    ))
+
+    styles.add(ParagraphStyle(
+        name='TldrAction',
+        fontName='Helvetica',
+        fontSize=10,
+        textColor=TEXT_PRIMARY,
+        leftIndent=12,
+        spaceBefore=3,
+        spaceAfter=3,
+        leading=14,
+        alignment=TA_LEFT,
+    ))
+
     return styles
+
+
+# ============================================================
+# TL;DR RENDERING
+# ============================================================
+
+_BOLD_SPAN = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_NUMBERED_LINE = re.compile(r"^\s*\d+\.\s")
+
+
+def _resolve_style(styles, *names):
+    """Return the first style present in the stylesheet, falling back to Normal."""
+    for name in names:
+        try:
+            return styles[name]
+        except KeyError:
+            continue
+    return styles['Normal']
+
+
+def escape_markup(value):
+    """Escape XML-significant characters in a data-derived value.
+
+    Every audit-supplied string interpolated into a Paragraph must go through
+    this. GEO findings routinely quote HTML — 'add <meta name="robots">',
+    'use <time datetime>', 'wrap in <aside>' — and ReportLab's mini-XML parser
+    would otherwise silently swallow the tag or raise on a client named 'A & B'.
+
+    Escape ONLY data-derived values, never the literal markup being constructed.
+    """
+    if value is None:
+        return ""
+    return (str(value).replace("&", "&amp;")
+                      .replace("<", "&lt;")
+                      .replace(">", "&gt;"))
+
+
+def _to_inline_markup(text):
+    """Escape XML-significant characters, then convert **bold** to <b>bold</b>.
+
+    Escaping happens FIRST so that client-supplied text (a brand name containing
+    '&', an action mentioning '<robots.txt>') can never break ReportLab's parser.
+    """
+    return _BOLD_SPAN.sub(r"<b>\1</b>", escape_markup(text))
+
+
+def _action_markup(index, action):
+    """Render one action-plan item as inline markup, escaping the data-derived parts.
+
+    Accepts either a plain string or a {'action': ..., 'impact': ...} dict.
+    """
+    if isinstance(action, dict):
+        return (f"<b>{index}.</b> {_to_inline_markup(action.get('action', ''))} "
+                f"— <i>{_to_inline_markup(action.get('impact', ''))}</i>")
+    return f"<b>{index}.</b> {_to_inline_markup(action)}"
+
+
+def _is_structured_tldr(text):
+    """True when the summary carries TL;DR structure (bold lead and/or numbered actions)."""
+    if _BOLD_SPAN.search(text):
+        return True
+    return any(_NUMBERED_LINE.match(line) for line in text.splitlines())
+
+
+def _split_tldr_blocks(text):
+    """Split a TL;DR into (kind, text) blocks, kind in {'line', 'action'}.
+
+    Each source line becomes its own block, except that continuation lines
+    following a numbered action are folded into that action.
+    """
+    blocks = []
+    current_kind = None
+    current_lines = []
+
+    def flush():
+        nonlocal current_kind, current_lines
+        if current_lines:
+            blocks.append((current_kind, " ".join(current_lines).strip()))
+        current_kind = None
+        current_lines = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush()
+            continue
+        if _NUMBERED_LINE.match(raw_line):
+            flush()
+            current_kind = 'action'
+            current_lines = [line]
+        elif current_kind == 'action':
+            current_lines.append(line)
+        else:
+            flush()
+            current_kind = 'line'
+            current_lines = [line]
+
+    flush()
+    return [(kind, body) for kind, body in blocks if body]
+
+
+def render_tldr_flowables(summary_text, styles):
+    """Render the executive-summary TL;DR into a list of ReportLab flowables.
+
+    Structured input (a **bold** lead line and/or lines starting with '1.', '2.', …)
+    is broken into a lead paragraph, the posture line(s), and one indented paragraph
+    per numbered action. Unstructured prose — pre-v0.4.0 audit JSON — returns exactly
+    one Paragraph, identical to how it has always rendered. Empty input returns [],
+    so the caller can skip the section.
+    """
+    if not summary_text or not summary_text.strip():
+        return []
+
+    body_style = _resolve_style(styles, 'BodyText_Custom', 'BodyText')
+
+    if not _is_structured_tldr(summary_text):
+        # Backwards compatible: legacy prose summaries render verbatim, as before.
+        return [Paragraph(summary_text, body_style)]
+
+    lead_style = _resolve_style(styles, 'TldrLead', 'BodyText_Custom', 'BodyText')
+    action_style = _resolve_style(styles, 'TldrAction', 'Recommendation')
+    if getattr(action_style, 'leftIndent', 0) <= 0:
+        action_style = ParagraphStyle('TldrActionFallback', parent=body_style, leftIndent=12)
+
+    flowables = []
+    for kind, block in _split_tldr_blocks(summary_text):
+        if kind == 'action':
+            style = action_style
+        elif not flowables:
+            style = lead_style
+        else:
+            style = body_style
+        flowables.append(Paragraph(_to_inline_markup(block), style))
+
+    return flowables
 
 
 def header_footer(canvas, doc):
@@ -410,7 +570,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     # Subtitle
     elements.append(Paragraph(
-        f"Generative Engine Optimization Audit for <b>{brand_name}</b>",
+        f"Generative Engine Optimization Audit for <b>{escape_markup(brand_name)}</b>",
         styles['ReportSubtitle']
     ))
 
@@ -460,12 +620,14 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
     elements.append(Paragraph("Executive Summary", styles['SectionHeader']))
     elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceAfter=12))
 
-    if executive_summary:
-        elements.append(Paragraph(executive_summary, styles['BodyText_Custom']))
+    tldr_flowables = render_tldr_flowables(executive_summary, styles)
+    if tldr_flowables:
+        elements.extend(tldr_flowables)
     else:
         elements.append(Paragraph(
             f"This report presents the findings of a comprehensive Generative Engine Optimization (GEO) "
-            f"audit conducted on <b>{brand_name}</b> ({url}). The analysis evaluated the website's readiness "
+            f"audit conducted on <b>{escape_markup(brand_name)}</b> ({escape_markup(url)}). "
+            f"The analysis evaluated the website's readiness "
             f"for AI-powered search engines including Google AI Overviews, ChatGPT, Perplexity, Gemini, "
             f"and Bing Copilot. The overall GEO Readiness Score is <b>{geo_score}/100</b>, "
             f"placing the site in the <b>{get_score_label(geo_score)}</b> tier.",
@@ -612,16 +774,16 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
                     s_style = status_style_default
 
                 crawler_data.append([
-                    Paragraph(crawler_name, cell_style),
-                    Paragraph(info.get("platform", ""), cell_style),
-                    Paragraph(status_text, s_style),
-                    Paragraph(info.get("recommendation", ""), cell_style),
+                    Paragraph(escape_markup(crawler_name), cell_style),
+                    Paragraph(escape_markup(info.get("platform", "")), cell_style),
+                    Paragraph(escape_markup(status_text), s_style),
+                    Paragraph(escape_markup(info.get("recommendation", "")), cell_style),
                 ])
             else:
                 crawler_data.append([
-                    Paragraph(crawler_name, cell_style),
+                    Paragraph(escape_markup(crawler_name), cell_style),
                     Paragraph("", cell_style),
-                    Paragraph(str(info), cell_style),
+                    Paragraph(escape_markup(info), cell_style),
                     Paragraph("", cell_style),
                 ])
 
@@ -662,11 +824,12 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
                 sev_color = TEXT_SECONDARY
 
             elements.append(Paragraph(
-                f'<font color="{sev_color.hexval()}">[{severity}]</font> <b>{title}</b>',
+                f'<font color="{sev_color.hexval()}">[{escape_markup(severity)}]</font> '
+                f'<b>{_to_inline_markup(title)}</b>',
                 styles['BodyText_Custom']
             ))
             if description:
-                elements.append(Paragraph(description, styles['Recommendation']))
+                elements.append(Paragraph(_to_inline_markup(description), styles['Recommendation']))
             elements.append(Spacer(1, 4))
     else:
         elements.append(Paragraph(
@@ -691,11 +854,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if quick_wins:
         for i, action in enumerate(quick_wins, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_wins = [
             "Allow all Tier 1 AI crawlers in robots.txt (GPTBot, ClaudeBot, PerplexityBot)",
@@ -718,11 +877,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if medium_term:
         for i, action in enumerate(medium_term, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_medium = [
             "Restructure top 10 pages with question-based headings and direct answer blocks",
@@ -745,11 +900,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
 
     if strategic:
         for i, action in enumerate(strategic, 1):
-            if isinstance(action, dict):
-                text = f"<b>{i}.</b> {action.get('action', '')} — <i>{action.get('impact', '')}</i>"
-            else:
-                text = f"<b>{i}.</b> {action}"
-            elements.append(Paragraph(text, styles['Recommendation']))
+            elements.append(Paragraph(_action_markup(i, action), styles['Recommendation']))
     else:
         default_strategic = [
             "Build Wikipedia/Wikidata entity presence through press coverage and notability",
@@ -770,7 +921,7 @@ def generate_report(data, output_path="GEO-REPORT.pdf"):
     elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceAfter=12))
 
     elements.append(Paragraph(
-        f"This GEO audit was conducted on {date} analyzing {url}. "
+        f"This GEO audit was conducted on {escape_markup(date)} analyzing {escape_markup(url)}. "
         "The analysis evaluated the website across six dimensions: AI Citability & Visibility (25%), "
         "Brand Authority Signals (20%), Content Quality & E-E-A-T (20%), Technical Foundations (15%), "
         "Structured Data (10%), and Platform Optimization (10%).",

@@ -66,12 +66,12 @@ except ImportError:
 AI_CRAWLERS = {
     # OpenAI
     "GPTBot": {
-        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)",
         "class": "training",
         "operator": "OpenAI",
     },
     "OAI-SearchBot": {
-        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)",
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.4; +https://openai.com/searchbot)",
         "class": "search-index",
         "operator": "OpenAI",
     },
@@ -107,10 +107,16 @@ AI_CRAWLERS = {
         "class": "live-retrieval",
         "operator": "Perplexity",
     },
-    # Mistral
+    # Mistral. Both tokens documented at https://docs.mistral.ai/robots/ and
+    # both explicitly NOT used for generative AI training.
     "MistralAI-User": {
         "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-User/1.0; +https://docs.mistral.ai/robots)",
         "class": "live-retrieval",
+        "operator": "Mistral",
+    },
+    "MistralAI-Index": {
+        "ua": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-Index/1.0; +https://docs.mistral.ai/robots)",
+        "class": "search-index",
         "operator": "Mistral",
     },
     # DuckDuckGo
@@ -438,6 +444,8 @@ def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict
         "freshness": {},
         "has_ssr_content": True,
         "security_headers": {},
+        "fetch_method": "default",
+        "challenge_detected": False,
         "errors": [],
     }
 
@@ -456,6 +464,38 @@ def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict
             timeout=timeout,
             allow_redirects=True,
         )
+
+        # WAF/CDN challenge fallback. Cloudflare and friends serve an
+        # interstitial to generic scripted user-agents — sometimes with a
+        # 200 status — and parsing that block page as if it were the site
+        # would silently corrupt every downstream analysis. Retry ONCE with
+        # the GPTBot user-agent, which sites that challenge scripted
+        # browsers commonly allowlist. One retry only: no retry storms, and
+        # nothing happens at all unless the body actually looks like a
+        # challenge (an ordinary 403/404/500 is left alone).
+        if is_challenge_page(response.text, response.status_code):
+            result["challenge_detected"] = True
+            bot_headers = dict(request_headers)
+            bot_headers["User-Agent"] = AI_CRAWLERS["GPTBot"]["ua"]
+            bot_response = requests.get(
+                url,
+                headers=bot_headers,
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            if not is_challenge_page(bot_response.text, bot_response.status_code):
+                # The bot UA got through — everything downstream parses the
+                # retry response instead of the challenge page.
+                response = bot_response
+                result["fetch_method"] = "bot_ua_fallback"
+            else:
+                # Challenged both ways. Keep the original response for a
+                # best-effort parse and flag the result as unreliable.
+                result["errors"].append(
+                    "Page returned a WAF/CDN challenge to both a browser "
+                    "user-agent and a bot user-agent; content analysis may "
+                    "be unreliable."
+                )
 
         # Track redirects
         if response.history:

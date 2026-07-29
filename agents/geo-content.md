@@ -263,6 +263,20 @@ Evaluate whether the site demonstrates topical authority in the subject area of 
 - Are there signs of regular updates (e.g., "Updated for 2026")? A visible update note that the `freshness` field cannot corroborate is worth flagging — the claim is not machine-readable.
 - Is the content time-sensitive? (News, statistics, technology topics require freshness; evergreen topics are less affected.) Weight `stale`/`very-stale` findings up on time-sensitive and YMYL topics.
 
+#### Surfacing freshness in the report
+
+Freshness is weighted modestly in the Content Score composite (5%, Step 10) **by deliberate decision** — its value is as a recurring, actionable maintenance signal, not as score movement. Rescaling it would break month-over-month comparability in `geo-compare`, so it is surfaced in the report body instead.
+
+When key pages fall outside the `fresh` tier, emit a concrete finding rather than letting the tier sit in the Content Freshness table:
+
+> **Finding:** N of the M pages analysed sit outside the ~13-week window AI engines measurably prefer.
+> **Evidence:** [page] last modified [date] ([age] days, tier: [tier]); [page] … (source: [freshness.source])
+> **Impact:** AI engines favour recently-updated pages when choosing what to cite; these are the pages most likely to be passed over.
+> **Fix:** Refresh and re-stamp `dateModified` on these pages, highest-traffic first. Content task, hours. [If tier is `unknown`: the page carries no machine-readable date at all — add `<time datetime>` or Article schema so recency is verifiable.] [If tier is `future-dated`: this is a markup defect — a publication date in the future; fix the template or CMS field.]
+> **Confidence:** Confirmed.
+
+Name the specific pages. "Some content is stale" is not actionable; "these six pages cross the window next month" is.
+
 ### Step 10: Calculate Content Score
 
 Compute the **Content Score (0-100)** by combining:

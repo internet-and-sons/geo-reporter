@@ -123,6 +123,8 @@ The output also carries `stale_tokens` — retired crawler tokens the site's rob
 
 The robots output's `licensing` field (`license_urls` / `content_usage` / `content_signal`) surfaces machine-readable AI-licensing declarations — report presence as an informational line; the `geo-agentready` skill covers the full protocol surface.
 
+**Scoping caveat:** `licensing.content_usage` is flattened across user-agent groups — the parser records the directive values but not which `User-agent:` block each came from. Report presence generally ("the site declares AIPREF Content-Usage preferences"); if a site scopes different AI-usage terms per crawler, read the raw robots.txt before stating specifics.
+
 **Critical: do not re-parse robots.txt yourself.** The script's `fetch_robots_txt()` already handles `User-agent: *` wildcard inheritance correctly. Hand-rolled parsing in the past has produced false "Unverified" status on fully permissive sites (e.g. `User-agent: *` + empty `Disallow:` was mis-classified as "Unknown" when it actually means "Allowed via wildcard").
 
 #### Step 3c: Reconcile and render the final table

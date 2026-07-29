@@ -24,6 +24,8 @@ As of early 2026, many websites inadvertently block AI crawlers through overly a
 
 ## Complete AI Crawler Reference
 
+UA strings here mirror `AI_CRAWLERS` in `scripts/fetch_page.py` — that roster is the source of truth; update both together.
+
 ### Tier 1: Critical for AI Search Visibility (RECOMMEND: ALLOW)
 
 These crawlers power the AI search products where users actively look for answers. Blocking them directly reduces your visibility in AI-generated responses.
@@ -31,7 +33,7 @@ These crawlers power the AI search products where users actively look for answer
 #### GPTBot
 - **Operator:** OpenAI
 - **User-Agent:** `GPTBot`
-- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)`
+- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)`
 - **Purpose:** Fetches content for ChatGPT's web browsing, plugins, and search features. Content accessed by GPTBot may be used to improve OpenAI models.
 - **Impact of Blocking:** Content will NOT appear in ChatGPT Search results or be accessible when users ask ChatGPT to browse the web. This is the highest-impact AI crawler to allow.
 - **Recommendation:** **ALLOW** -- ChatGPT has 300M+ weekly active users as of 2025. Blocking GPTBot removes your content from one of the largest AI search surfaces.
@@ -39,7 +41,7 @@ These crawlers power the AI search products where users actively look for answer
 #### OAI-SearchBot
 - **Operator:** OpenAI
 - **User-Agent:** `OAI-SearchBot`
-- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.0; +https://docs.openai.com/bots/overview)`
+- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; OAI-SearchBot/1.4; +https://openai.com/searchbot)`
 - **Purpose:** Specifically powers ChatGPT's search feature. Unlike GPTBot, content accessed by OAI-SearchBot is NOT used for model training -- only for live search results.
 - **Impact of Blocking:** Content will not appear in ChatGPT's search results even if GPTBot is allowed.
 - **Recommendation:** **ALLOW** -- This is a search-only crawler with no training implications. There is no strategic reason to block it.
@@ -55,7 +57,7 @@ These crawlers power the AI search products where users actively look for answer
 #### ClaudeBot
 - **Operator:** Anthropic
 - **User-Agent:** `ClaudeBot`
-- **Full User-Agent String:** `ClaudeBot/1.0; +https://www.anthropic.com/claude-bot`
+- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +https://www.anthropic.com/claude-bot)`
 - **Purpose:** Fetches web content for Claude's features including web search, citations, and analysis tools.
 - **Impact of Blocking:** Content will not be accessible to Claude for web search or when users ask Claude to analyze specific URLs.
 - **Recommendation:** **ALLOW** -- Claude is a major AI assistant with growing market share. Blocking ClaudeBot reduces your AI search footprint.
@@ -98,7 +100,7 @@ These crawlers serve large AI platforms or search ecosystems. Allowing them incr
 #### Amazonbot
 - **Operator:** Amazon
 - **User-Agent:** `Amazonbot`
-- **Full User-Agent String:** `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/600.2.5 (KHTML, like Gecko) Version/8.0.2 Safari/600.2.5 (compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)`
+- **Full User-Agent String:** `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1) Chrome/119.0.0.0 Safari/537.36`
 - **Purpose:** Indexes content for Alexa answers and Amazon's AI features.
 - **Impact of Blocking:** Content will not appear in Alexa voice responses or Amazon's AI-powered search features.
 - **Recommendation:** **ALLOW** -- Relevant for voice search optimization. Lower priority than Tier 1 crawlers but no downside to allowing.
@@ -119,7 +121,7 @@ These crawlers are primarily used for AI model training rather than live search 
 #### CCBot
 - **Operator:** Common Crawl (nonprofit)
 - **User-Agent:** `CCBot`
-- **Full User-Agent String:** `CCBot/2.0 (https://commoncrawl.org/faq/)`
+- **Full User-Agent String:** `CCBot/2.0 (+https://commoncrawl.org/faq/)`
 - **Purpose:** Builds the Common Crawl dataset, which is used as training data by many AI companies (Google, Meta, Stability AI, and others).
 - **Impact of Blocking:** Content will not appear in future Common Crawl datasets. Does NOT affect any live AI search product.
 - **Recommendation:** **CONTEXT-DEPENDENT** -- Allow if you want maximum long-term AI training presence. Block if you want to control training data usage. No impact on search visibility.
@@ -359,11 +361,14 @@ Generate a file called `GEO-CRAWLER-ACCESS.md`:
 
 **Retired tokens still present:** [list any tokens from the `stale_tokens` field — cleanup item, not an access status. Write "None" if the field is empty.]
 
-## AI Visibility Score: [X]/100
+## Crawler Access Score: [overall_score]/100 (measured — live probe)
 
-**Tier 1 Access:** [X/5 crawlers allowed]
-**Tier 2 Access:** [X/5 crawlers allowed]
-**Tier 3 Access:** [X/4 crawlers allowed]
+**Per-class:** Live-retrieval [X] · Search-index [X] · Traditional-search [X] · Training [X]
+**Verdict:** [OPEN / HEALTHY_PUBLISHER / PARTIALLY_BLOCKED / MOSTLY_BLOCKED / BLOCKED]
+
+<!-- Numbers come from the Step 0 probe's `overall_score` / `class_scores` / `verdict`.
+     Do not compute a score from the tier counts in this skill — see
+     "Crawler access score — use the measured one" below. -->
 
 ---
 
@@ -408,15 +413,8 @@ See https://contentsignals.org/ for the full specification.
 
 ---
 
-## Scoring for Crawler Access
+## Crawler access score — use the measured one
 
-The AI Crawler Access Score is calculated as:
+This skill reports **declared policy** (what robots.txt says). The score comes from **measured reachability** — the live probe's `overall_score` and `class_scores` (see the `geo-botaccess` skill).
 
-| Component | Weight | Scoring |
-|---|---|---|
-| Tier 1 Crawlers Allowed | 50% | 20 points per Tier 1 crawler allowed (5 crawlers = 100 points max, scaled to 50) |
-| Tier 2 Crawlers Allowed | 25% | 20 points per Tier 2 crawler allowed (5 crawlers = 100 points max, scaled to 25) |
-| No Blanket AI Blocks | 15% | Full points if no `User-agent: *` Disallow: / and no noai meta tags |
-| AI-Specific Files Present | 10% | 5 points for llms.txt, 5 points for sitemap accessible to AI crawlers |
-
-Final score = sum of all weighted components, capped at 100.
+Do not compute a second score from tier counts. A site with a permissive robots.txt and a blocking WAF is exactly the case this tool exists to catch, and a declared-policy score would read ~94/100 while reality reads ~31/100. Two scores that disagree force the reader to reconcile them; report one number, from the probe, and use this skill's tier tables to explain *what each bot does* rather than to compute anything.

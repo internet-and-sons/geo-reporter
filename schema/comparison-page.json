@@ -1,8 +1,10 @@
 {
   "@context": "https://schema.org",
   "@type": "ItemList",
-  "name": "REPLACE: Best X for Y — 2026 comparison",
-  "description": "REPLACE: One-sentence summary of what is compared and for whom.",
+  "@id": "https://YOURDOMAIN.com/COMPARISON_SLUG/#itemlist",
+  "name": "BEST_X_FOR_Y_COMPARISON_TITLE",
+  "description": "COMPARISON_DESCRIPTION",
+  "url": "https://YOURDOMAIN.com/COMPARISON_SLUG",
   "itemListOrder": "https://schema.org/ItemListOrderDescending",
   "numberOfItems": 3,
   "itemListElement": [
@@ -11,9 +13,9 @@
       "position": 1,
       "item": {
         "@type": "Product",
-        "name": "REPLACE: Option A",
-        "description": "REPLACE: 1-2 sentence verdict with a concrete differentiator.",
-        "url": "https://example.com/option-a"
+        "name": "OPTION_A_NAME",
+        "description": "OPTION_A_VERDICT",
+        "url": "https://YOURDOMAIN.com/option-a"
       }
     },
     {
@@ -21,9 +23,9 @@
       "position": 2,
       "item": {
         "@type": "Product",
-        "name": "REPLACE: Option B",
-        "description": "REPLACE: verdict",
-        "url": "https://example.com/option-b"
+        "name": "OPTION_B_NAME",
+        "description": "OPTION_B_VERDICT",
+        "url": "https://YOURDOMAIN.com/option-b"
       }
     },
     {
@@ -31,9 +33,9 @@
       "position": 3,
       "item": {
         "@type": "Product",
-        "name": "REPLACE: Option C",
-        "description": "REPLACE: verdict",
-        "url": "https://example.com/option-c"
+        "name": "OPTION_C_NAME",
+        "description": "OPTION_C_VERDICT",
+        "url": "https://YOURDOMAIN.com/option-c"
       }
     }
   ]
