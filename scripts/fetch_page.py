@@ -809,8 +809,11 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
          detection alone.
       3. Fingerprint WAF/CDN products from the baseline headers — this
          drives product-specific remediation in downstream skills.
-      4. Replay the request as each AI crawler in AI_CRAWLERS, comparing
-         status, body length, and content similarity to the baseline.
+      4. Replay the request as each ACTIVE AI crawler (see
+         active_crawlers() — retired and opt-out-only tokens are never
+         probed, and are reported in result["excluded_tokens"]),
+         comparing status, body length, and content similarity to the
+         baseline.
          A bot is considered blocked if any of:
             - status is 403, 406, 429, or 503
             - body matches Cloudflare challenge markers (200 with a
@@ -833,6 +836,14 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         "wafs_detected": [],
         "probes": [],
         "errors": [],
+        # Roster entries deliberately NOT probed, mapped to why. Lets the
+        # report layer explain the absence of e.g. a Google-Extended row
+        # instead of leaving a silent gap.
+        "excluded_tokens": {
+            name: info.get("status")
+            for name, info in AI_CRAWLERS.items()
+            if info.get("status", "active") != "active"
+        },
     }
 
     # Reject non-http(s) schemes before any network call. Mirrors the
@@ -889,7 +900,7 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         result["js_challenge_detected"] and not result["baseline"]["used_playwright"]
     )
 
-    for bot_name, meta in AI_CRAWLERS.items():
+    for bot_name, meta in active_crawlers().items():
         bot_ua = meta["ua"]
         probe = {
             "bot": bot_name,

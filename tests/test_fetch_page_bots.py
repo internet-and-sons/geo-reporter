@@ -10,7 +10,7 @@ Covers:
       * 200 OK with a disguised challenge body
       * Healthy 200 with high similarity to baseline (allowed)
       * Silent content stripping (low similarity + small body)
-  - probe_ai_crawlers() probes every bot in AI_CRAWLERS
+  - probe_ai_crawlers() probes every ACTIVE bot (status filtering)
 
 Mocking style mirrors test_fetch_page_ssr.py — patch
 ``fetch_page.requests.get`` with a MagicMock and feed responses via
@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from fetch_page import (  # noqa: E402
     AI_CRAWLERS,
     BOT_CLASSES,
+    active_crawlers,
     detect_waf,
     is_challenge_page,
     _content_similarity,
@@ -194,7 +195,7 @@ class TestProbeAiCrawlersAllAllowed:
         baseline = _resp(status=200, text=BASELINE_HTML, headers={})
         bot_responses = [
             _resp(status=200, text=BASELINE_HTML, headers={})
-            for _ in AI_CRAWLERS
+            for _ in active_crawlers()
         ]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses):
@@ -202,19 +203,34 @@ class TestProbeAiCrawlersAllAllowed:
 
         assert result["baseline"]["status"] == 200
         assert result["js_challenge_detected"] is False
-        assert len(result["probes"]) == len(AI_CRAWLERS)
+        assert len(result["probes"]) == len(active_crawlers())
         assert all(p["blocked"] is False for p in result["probes"])
 
-    def test_probes_every_bot_in_AI_CRAWLERS(self):
+    def test_probes_every_active_bot(self):
         baseline = _resp(status=200, text=BASELINE_HTML)
         bot_responses = [_resp(status=200, text=BASELINE_HTML)
-                         for _ in AI_CRAWLERS]
+                         for _ in active_crawlers()]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses):
             result = probe_ai_crawlers("http://example.com/")
 
         probed = {p["bot"] for p in result["probes"]}
-        assert probed == set(AI_CRAWLERS.keys())
+        assert probed == set(active_crawlers().keys())
+        assert "anthropic-ai" not in probed
+        assert "Google-Extended" not in probed
+
+    def test_excluded_tokens_reported(self):
+        """Non-active roster entries surface in excluded_tokens with status."""
+        baseline = _resp(status=200, text=BASELINE_HTML)
+        bot_responses = [_resp(status=200, text=BASELINE_HTML)
+                         for _ in active_crawlers()]
+        with patch("fetch_page.requests.get",
+                   side_effect=[baseline] + bot_responses):
+            result = probe_ai_crawlers("http://example.com/")
+
+        assert result["excluded_tokens"]["anthropic-ai"] == "retired"
+        assert result["excluded_tokens"]["Google-Extended"] == "opt-out-token"
+        assert "GPTBot" not in result["excluded_tokens"]
 
 
 class TestProbeAiCrawlersBlockedByStatus:
@@ -224,7 +240,7 @@ class TestProbeAiCrawlersBlockedByStatus:
         baseline = _resp(status=200, text=BASELINE_HTML)
         # First bot (GPTBot) gets the bad status, the rest are 200.
         bot_responses = []
-        for i, _ in enumerate(AI_CRAWLERS):
+        for i, _ in enumerate(active_crawlers()):
             if i == 0:
                 bot_responses.append(_resp(status=status, text="blocked"))
             else:
@@ -264,7 +280,7 @@ class TestProbeAiCrawlersBlockedByChallengeBody:
         baseline = _resp(status=200, text=BASELINE_HTML)
         challenge_body = "<html>Just a moment... cf-challenge ray id 1</html>"
         bot_responses = []
-        for i, _ in enumerate(AI_CRAWLERS):
+        for i, _ in enumerate(active_crawlers()):
             if i == 0:
                 bot_responses.append(_resp(status=200, text=challenge_body))
             else:
@@ -285,7 +301,7 @@ class TestProbeAiCrawlersBlockedByContentStripping:
         baseline = _resp(status=200, text=BASELINE_HTML)
         stripped = "<html><body>nothing here</body></html>"
         bot_responses = []
-        for i, _ in enumerate(AI_CRAWLERS):
+        for i, _ in enumerate(active_crawlers()):
             if i == 0:
                 bot_responses.append(_resp(status=200, text=stripped))
             else:
@@ -310,7 +326,7 @@ class TestProbeAiCrawlersWafFingerprintingIntegration:
             headers={"CF-Ray": "abc-LHR", "Server": "cloudflare"},
         )
         bot_responses = [_resp(status=200, text=BASELINE_HTML)
-                         for _ in AI_CRAWLERS]
+                         for _ in active_crawlers()]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses):
             result = probe_ai_crawlers("http://example.com/")
@@ -328,7 +344,7 @@ class TestProbeAiCrawlersJsChallengeDetection:
         # When the baseline is a challenge and Playwright isn't installed,
         # the probe falls back to status/challenge-marker detection only.
         bot_responses = [_resp(status=200, text=BASELINE_HTML)
-                         for _ in AI_CRAWLERS]
+                         for _ in active_crawlers()]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses), \
              patch("fetch_page._playwright_baseline", return_value=None):
@@ -341,7 +357,7 @@ class TestProbeAiCrawlersJsChallengeDetection:
         challenge = "<html>Just a moment... cf-challenge ray id 1</html>"
         baseline = _resp(status=200, text=challenge)
         bot_responses = [_resp(status=200, text=BASELINE_HTML)
-                         for _ in AI_CRAWLERS]
+                         for _ in active_crawlers()]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses), \
              patch("fetch_page._playwright_baseline",
@@ -368,12 +384,12 @@ class TestProbeAiCrawlersErrorHandling:
         baseline = _resp(status=200, text=BASELINE_HTML)
         responses = [baseline]
         # Every bot raises — each should be flagged blocked with request_error.
-        for _ in AI_CRAWLERS:
+        for _ in active_crawlers():
             responses.append(Exception("timeout"))
         with patch("fetch_page.requests.get", side_effect=responses):
             result = probe_ai_crawlers("http://example.com/")
 
-        assert len(result["probes"]) == len(AI_CRAWLERS)
+        assert len(result["probes"]) == len(active_crawlers())
         assert all(p["blocked"] for p in result["probes"])
         assert all(
             p["block_reason"].startswith("request_error")
@@ -426,7 +442,7 @@ class TestBotClassMetadata:
     def test_probes_carry_class_and_operator(self):
         baseline = _resp(status=200, text=BASELINE_HTML)
         bot_responses = [_resp(status=200, text=BASELINE_HTML)
-                         for _ in AI_CRAWLERS]
+                         for _ in active_crawlers()]
         with patch("fetch_page.requests.get",
                    side_effect=[baseline] + bot_responses):
             result = probe_ai_crawlers("http://example.com/")
@@ -444,7 +460,7 @@ class TestVerdictLogic:
         """Build a probe result where bots in `blocked_classes` get 403."""
         baseline = _resp(status=200, text=BASELINE_HTML)
         bot_responses = []
-        for name, meta in AI_CRAWLERS.items():
+        for name, meta in active_crawlers().items():
             if meta["class"] in blocked_classes:
                 bot_responses.append(_resp(status=403, text="blocked"))
             else:
@@ -485,7 +501,7 @@ class TestVerdictLogic:
         baseline = _resp(status=200, text=BASELINE_HTML)
         bot_responses = []
         blocked_one = False
-        for name, meta in AI_CRAWLERS.items():
+        for name, meta in active_crawlers().items():
             if meta["class"] == "search-index" and not blocked_one:
                 bot_responses.append(_resp(status=403, text="blocked"))
                 blocked_one = True
