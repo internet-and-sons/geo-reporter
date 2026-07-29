@@ -1,0 +1,40 @@
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "REPLACE: Best X for Y — 2026 comparison",
+  "description": "REPLACE: One-sentence summary of what is compared and for whom.",
+  "itemListOrder": "https://schema.org/ItemListOrderDescending",
+  "numberOfItems": 3,
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "item": {
+        "@type": "Product",
+        "name": "REPLACE: Option A",
+        "description": "REPLACE: 1-2 sentence verdict with a concrete differentiator.",
+        "url": "https://example.com/option-a"
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "item": {
+        "@type": "Product",
+        "name": "REPLACE: Option B",
+        "description": "REPLACE: verdict",
+        "url": "https://example.com/option-b"
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "item": {
+        "@type": "Product",
+        "name": "REPLACE: Option C",
+        "description": "REPLACE: verdict",
+        "url": "https://example.com/option-c"
+      }
+    }
+  ]
+}

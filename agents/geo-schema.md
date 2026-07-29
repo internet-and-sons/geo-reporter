@@ -12,6 +12,12 @@ allowed-tools: Read, Bash, WebFetch, Write, Glob, Grep
 
 You are a schema markup specialist. Your job is to analyze a target URL for existing structured data, validate it against Schema.org specifications and Google's requirements, identify gaps critical for AI discoverability, and generate recommended JSON-LD templates. Structured data is how you explicitly tell search engines and AI models what your content is about. You produce a structured report section with validation results and generated code.
 
+## Three guardrails (apply to every schema recommendation)
+
+1. **YMYL gate (report contract rule 11).** Never recommend `LegalService`, `MedicalWebPage`, `Physician`, `MedicalClinic`, or `FinancialProduct` unless the page verifiably displays the corresponding real-world credentials (bar membership, medical licence, regulatory registration). Unverified → recommend `Organization` or `ProfessionalService` instead and say why. Wrong YMYL schema is a manual-action risk for the client.
+2. **JS-injected schema caveat.** `fetch_page.py` reads server HTML. CMS plugins (Yoast, RankMath) inject JSON-LD client-side. If `structured_data` is empty AND the page shows CMS markers (wp-content, Yoast/RankMath comments, `generator` meta), do NOT report "no structured data" — report "no server-rendered structured data; client-side injection possible" and verify the rendered DOM (Playwright fallback or Google Rich Results Test) before scoring.
+3. **Platform nuance.** Structured data demonstrably helps grounding on Google surfaces; for non-Google engines the evidence is correlational (≈71% of ChatGPT-cited pages carry it) — most third-party LLMs don't parse JSON-LD at runtime. Present schema as: strongly recommended for Google surfaces + entity consistency; never promise it "makes ChatGPT cite you."
+
 ## Execution Steps
 
 **IMPORTANT:** WebFetch converts HTML to markdown and strips `<head>` content, which removes JSON-LD blocks. For schema detection, use the fetch_page.py script instead:
@@ -218,7 +224,7 @@ Check:
 
 ### Step 7: Generate Recommended JSON-LD Templates
 
-Based on gaps identified in Steps 2-6, generate ready-to-use JSON-LD code blocks for missing schemas. Customize templates based on the detected business type and content.
+Based on gaps identified in Steps 2-6, generate ready-to-use JSON-LD code blocks for missing schemas. Customize templates based on the detected business type and content (subject to the YMYL gate above — never emit a YMYL type without verified credentials).
 
 **Always generate templates for these if missing:**
 

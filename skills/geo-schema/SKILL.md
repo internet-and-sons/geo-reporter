@@ -13,6 +13,12 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 
 Structured data is the primary machine-readable signal that tells AI systems what an entity IS, what it does, and how it connects to other entities. While schema markup has traditionally been about earning Google rich results, its role in GEO is fundamentally different: **structured data is how AI models understand and trust your entity**. A complete entity graph in structured data dramatically increases citation probability across all AI search platforms.
 
+## Three guardrails (apply to every schema recommendation)
+
+1. **YMYL gate (report contract rule 11).** Never recommend `LegalService`, `MedicalWebPage`, `Physician`, `MedicalClinic`, or `FinancialProduct` unless the page verifiably displays the corresponding real-world credentials (bar membership, medical licence, regulatory registration). Unverified → recommend `Organization` or `ProfessionalService` instead and say why. Wrong YMYL schema is a manual-action risk for the client.
+2. **JS-injected schema caveat.** `fetch_page.py` reads server HTML. CMS plugins (Yoast, RankMath) inject JSON-LD client-side. If `structured_data` is empty AND the page shows CMS markers (wp-content, Yoast/RankMath comments, `generator` meta), do NOT report "no structured data" — report "no server-rendered structured data; client-side injection possible" and verify the rendered DOM (Playwright fallback or Google Rich Results Test) before scoring.
+3. **Platform nuance.** Structured data demonstrably helps grounding on Google surfaces; for non-Google engines the evidence is correlational (≈71% of ChatGPT-cited pages carry it) — most third-party LLMs don't parse JSON-LD at runtime. Present schema as: strongly recommended for Google surfaces + entity consistency; never promise it "makes ChatGPT cite you."
+
 ## How to Use This Skill
 
 1. Fetch the target page HTML using `fetch_page.py` (see note below)
@@ -247,7 +253,7 @@ Based on the detected business type, generate ready-to-paste JSON-LD blocks. Alw
 
 1. **Organization or Person** (depending on entity type) — always
 2. **WebSite with SearchAction** — always for the homepage
-3. **Business-type-specific** — Article for publishers, Product for e-commerce, LocalBusiness for local, SoftwareApplication for SaaS
+3. **Business-type-specific** (subject to the YMYL gate above) — Article for publishers, Product for e-commerce, LocalBusiness for local, SoftwareApplication for SaaS
 4. **BreadcrumbList** — for any page deeper than homepage
 
 ### Generation Rules
