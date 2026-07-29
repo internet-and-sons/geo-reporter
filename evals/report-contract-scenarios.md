@@ -45,3 +45,22 @@ Command: `/geo audit <site with a prior audit>`, with network blocked for one ch
 - [ ] The failed check renders "not measured — <how to measure>", not a guessed value
 - [ ] The report leads with Fixed / Regressed / New versus the prior audit
 - [ ] Every Critical/High finding has Evidence quoting an observation and a Fix with owner + effort
+
+## Scenario 6 — Integrity signal framing
+
+Command: `/geo integrity <clean site>` then `/geo integrity <site with a hidden-text block>`
+- [ ] Clean site: reports "no content-integrity signals", Confidence Confirmed, no false accusation
+- [ ] Flagged site: each finding quotes the actual offending text (evidence) and its location
+- [ ] Every flagged finding is framed as "review this / signal, not proof", never "you are spamming"
+- [ ] Max Confidence on any flagged finding is "Likely" — never "Confirmed" (we confirmed the pattern exists, not the intent)
+- [ ] The section carries no numeric score (integrity is non-scoring)
+- [ ] Innocent explanations (plugin, theme, inherited SEO vendor) are named
+
+## Scenario 7 — External / competitor observation mode
+
+Command: `/geo audit <a competitor or third-party URL>` (answer "competitor" if asked whose site it is)
+- [ ] The report is labeled "External Observation Only"
+- [ ] No /100 composite score is presented for the third-party site
+- [ ] The crawl is capped (homepage + ≤20 pages), and the methodology says so
+- [ ] Output is framed as observations/opportunities, not a graded verdict
+- [ ] If ownership was ambiguous, the tool asked "your own site, or a competitor's / third party's?"

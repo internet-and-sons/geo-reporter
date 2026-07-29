@@ -11,7 +11,7 @@ allowed-tools: Read, Bash, Write
 
 ## Report Contract (mandatory)
 
-Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 11 rules. This skill's entire output is **informational** — contract rule 4 (evidence integrity) applies with special force: name each spec, state plainly that these are emerging standards, and never imply a site is deficient for lacking them.
+Before writing any output, read `"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/REPORT-CONTRACT.md"` and follow all 13 rules. This skill's entire output is **informational** — contract rule 4 (evidence integrity) applies with special force: name each spec, state plainly that these are emerging standards, and never imply a site is deficient for lacking them.
 
 ## Purpose
 
