@@ -17,6 +17,7 @@ optimal-length window differ. That keeps cross-language scores comparable.
 """
 
 import sys
+import os
 import json
 import re
 import difflib
@@ -29,6 +30,34 @@ try:
 except ImportError:
     print("ERROR: Required packages not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
+
+# WAF/CDN challenge detection, the browser header set, and the AI crawler
+# roster all live in the sibling fetch_page module. Import them rather than
+# duplicating: a copy would drift the moment a new Cloudflare marker or bot
+# UA lands. Guarded the same way the optional imports above are — if the
+# sibling module can't be loaded (odd install layout, partial checkout), the
+# scorer degrades to its previous behaviour: one plain fetch, no challenge
+# handling, identical error contract.
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from fetch_page import AI_CRAWLERS, DEFAULT_HEADERS, is_challenge_page
+    CHALLENGE_FALLBACK_AVAILABLE = True
+except ImportError:  # pragma: no cover - defensive
+    CHALLENGE_FALLBACK_AVAILABLE = False
+    AI_CRAWLERS = {}
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+    }
+
+    def is_challenge_page(html, status_code):  # noqa: D103
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -564,14 +593,54 @@ def _compute_negative_signals(blocks: list) -> dict:
     }
 
 
+def _fetch_for_scoring(url: str, timeout: int = 30):
+    """Fetch ``url``, retrying once with a bot UA if a WAF challenge is served.
+
+    Returns ``(response, fetch_method, challenge_detected)``. Mirrors the
+    fallback contract in ``fetch_page.fetch_page()``: Cloudflare and friends
+    serve an interstitial to generic scripted user-agents — sometimes with a
+    200 status — and scoring that block page would silently zero out the
+    largest component of the composite GEO score. Retry ONCE with the GPTBot
+    user-agent, which challenge-fronted sites commonly allowlist. One retry
+    only, and only when the body actually looks like a challenge, so an
+    ordinary 403/404/500 never triggers a second request.
+
+    ``fetch_method`` is "bot_ua_fallback" only when the retry actually got
+    through; if both views are challenged it stays "default" and the caller
+    reports the failure.
+    """
+    headers = dict(DEFAULT_HEADERS)
+    response = requests.get(url, headers=headers, timeout=timeout)
+
+    if not is_challenge_page(response.text, response.status_code):
+        return response, "default", False
+
+    bot_headers = dict(headers)
+    bot_headers["User-Agent"] = AI_CRAWLERS["GPTBot"]["ua"]
+    bot_response = requests.get(url, headers=bot_headers, timeout=timeout)
+    if not is_challenge_page(bot_response.text, bot_response.status_code):
+        return bot_response, "bot_ua_fallback", True
+
+    return bot_response, "default", True
+
+
 def analyze_page_citability(url: str) -> dict:
     """Analyze all content blocks on a page for citability."""
     try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
-            timeout=30,
-        )
+        response, fetch_method, challenge_detected = _fetch_for_scoring(url)
+        if challenge_detected and fetch_method != "bot_ua_fallback":
+            # Challenged both as a browser and as a bot. Bail out before
+            # raise_for_status() so the caller gets a diagnosis ("a WAF stands
+            # between us and the content") rather than a bare status code.
+            return {
+                "error": (
+                    "Failed to fetch page: WAF/CDN challenge served to both a "
+                    "browser user-agent and a bot user-agent; the real content "
+                    "could not be reached for citability scoring."
+                ),
+                "fetch_method": fetch_method,
+                "challenge_detected": True,
+            }
         response.raise_for_status()
     except Exception as e:
         return {"error": f"Failed to fetch page: {str(e)}"}
@@ -625,6 +694,10 @@ def analyze_page_citability(url: str) -> dict:
 
     return {
         "url": url,
+        # Same disclosure contract as fetch_page(): the skill layer must be
+        # able to say WHICH view of the page was scored.
+        "fetch_method": fetch_method,
+        "challenge_detected": challenge_detected,
         "language_distribution": lang_dist,
         "total_blocks_analyzed": len(scored_blocks),
         "average_citability_score": round(avg_score, 1),
