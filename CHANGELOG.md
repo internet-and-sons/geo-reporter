@@ -8,6 +8,27 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-07-30
+
+**Theme: stop reporting expected behaviour as a defect.** v0.4.4 taught the audit to look at the right unit. The first audit that did so — the same `zman.co.il/democracy` section that prompted it — immediately exposed two ways the tool was manufacturing problems that did not exist. Both were pre-existing; neither was in v0.4.4's new code. Looking at the right thing is what made them visible.
+
+### Fixed
+
+- **An anti-impersonation 403 was scored as a block.** Google and Microsoft authenticate their crawlers by network address, so a request carrying their user-agent from anyone else's network is *supposed* to be refused. v0.4.3 taught the report to render that as `— Not tested (validated by network address)`, but the scoring engine never learned the distinction and counted all six as blocked. Measured on a site whose `robots.txt` is fully permissive and whose every AI retrieval and search crawler returns 200: **before — `traditional-search` 0/100, overall 43/100, `MOSTLY_BLOCKED`; after — `traditional-search` not measured, overall 85/100, `HEALTHY_PUBLISHER`.** The before column is precisely the Googlebot false alarm the v0.4.3 changelog warned about, and it reads to a site owner as "we're falling out of Google". A class with nothing testable now scores `null` rather than `0` — zero asserts "blocked" on no evidence — and `overall_score` renormalises its weights over the classes that could actually be measured.
+- **`missing_author` fired on every Hebrew article ever scored.** The byline patterns matched `by Foo` / `written by` / `author:` and nothing else, so articles carrying a named `Person` node in their JSON-LD were still reported as having no byline. The structured-data author is now checked first — it is the strongest signal available and, unlike any text pattern, language-independent — with Hebrew byline forms (`מאת`, `כתב:`, `מערכת`) behind it. Measured on the same sample: flagged on 5 of 5 articles before, 0 of 5 after.
+- **Interface chrome was scored as journalism.** Share bars, comment-system explainers and reader-support pitches sit *inside* the article element on most publisher templates, so their text landed in the scored body — and the chrome detector, matching only `share` / `copy link` / `subscribe`, could not fire on Hebrew at all. They are now removed at the DOM level, before blocks are built, which matters because the share bar's labels were concatenated onto the front of the article body: dropping that block would have discarded 383 words of journalism along with 59 words of buttons. Sample mean moved 50.9 → **61.2**, a 10-point understatement on the heaviest-weighted category in the audit.
+
+### Added
+
+- **Cross-article boilerplate detection** (`detect_cross_article_boilerplate`) — a standing editor's note or membership pitch appears *once per article*, so it is never an intra-page duplicate and the existing `boilerplate_ratio` could not see it. Given v0.4.4's verified child-article sample it is unmistakable. Where class-name heuristics are brittle across sites, "this identical passage appears on every article we sampled" is site-agnostic. Requires 2+ articles, counts each passage once per article, and tolerates a varied word or date.
+- **Eval scenarios 10 and 11** — expected-refusal-is-not-a-block, and the scorer speaking Hebrew.
+- `average_citability_score_all_blocks` and `chrome_blocks_excluded` / `chrome_elements_removed`, so a report can show its work rather than quietly publishing a different number than the previous audit did.
+
+### Changed
+
+- `average_citability_score` now covers journalism only. The all-blocks figure is retained for disclosure; on a publisher template the two differ by roughly 10 points.
+- Chrome stripping carries two guards, both learned by breaking things: structural tags (`html`/`body`/`main`/`article`) are never removed — zman.co.il ships `<body class="hide-bottom-bar-join">`, which matched the widget pattern and decomposed the entire page — and nothing holding more than 40% of the page text is removed whatever its class says. Each guard has a test that fails when that guard alone is removed.
+
 ## [0.4.4] — 2026-07-30
 
 **Theme: audit the right unit.** A client rejected one of our audits, and he was right. We had audited `zman.co.il/democracy` — a news **section listing page** — as though it were the thing AI engines cite. It isn't: a listing is a navigation surface built for humans. The units that get cited are **the articles beneath it**, plus **domain-level access**. Our report had recommended fixing the listing's 19 `<h1>` tags and its boilerplate meta description; re-auditing the articles inverted the conclusions entirely — the article template was already strong (single `<h1>`, `NewsArticle` schema, `dateModified`, unique per-article meta descriptions, full SSR), while the real problems were one Cloudflare rule and one template-level author stub. This release teaches the tool to pick the right unit, and fixes the false signals that same audit exposed.
@@ -294,7 +315,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.5
 [0.4.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.4
 [0.4.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.3
 [0.4.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.2
