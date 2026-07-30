@@ -326,7 +326,7 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 [Week-by-week checkboxes, each item carrying owner + effort tags.]
 
 ## Appendix
-[Raw tables: per-bot crawler matrix with the contract status legend printed above it, all-blocks citability scores, header dumps, pages analyzed, unit-selection methodology (classification + confidence + signals that fired, the sampled article URLs, and any sampled article excluded for failing to fetch), checks that did not run ("<metric> not measured — <how>").]
+[Raw tables: per-bot crawler matrix with the contract status legend printed above it, all-blocks citability scores, header dumps, pages analyzed, unit-selection methodology (classification + confidence + signals that fired, the sampled article URLs, and any sampled article excluded, with its reason — failed to fetch, or belonged to a different language tree than its listing), checks that did not run ("<metric> not measured — <how>").]
 ```
 
 ---
