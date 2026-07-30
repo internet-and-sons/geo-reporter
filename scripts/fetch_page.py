@@ -588,16 +588,30 @@ def classify_page_type(page_data: dict) -> dict:
         return {"type": "article", "confidence": confidence, "signals": signals}
 
     # --- listing -------------------------------------------------------
+    #
+    # The two structural signals below are what a listing *is*, so they
+    # gate the classification. Unresolved freshness is only a booster:
+    # most servers set Last-Modified, so requiring "unknown" would drop
+    # an ordinary dated section page through to "other", it would never
+    # get sampled, and we'd be back to auditing the wrapper. zman having
+    # no resolvable date is luck, not the general case.
     many_h1s = h1_count > LISTING_MIN_H1S - 1
     many_article_links = article_link_count >= LISTING_MIN_ARTICLE_LINKS
-    if (many_h1s or many_article_links) and not freshness_resolved:
+    if many_h1s or many_article_links:
         signals.append("no Article-family schema")
         if many_h1s:
             signals.append(f"{h1_count} h1 elements")
         if many_article_links:
             signals.append(f"{article_link_count} article-shaped internal links")
-        signals.append("freshness unresolved (no machine-readable date)")
-        confidence = "high" if (many_h1s and many_article_links) else "medium"
+        if freshness_resolved:
+            signals.append(f"freshness resolved ({tier}) — unusual for a listing")
+        else:
+            signals.append("freshness unresolved (no machine-readable date)")
+        both_signals = many_h1s and many_article_links
+        if both_signals:
+            confidence = "high" if not freshness_resolved else "medium"
+        else:
+            confidence = "medium" if not freshness_resolved else "low"
         return {"type": "listing", "confidence": confidence, "signals": signals}
 
     # --- other ---------------------------------------------------------

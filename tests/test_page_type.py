@@ -186,8 +186,14 @@ def test_navigation_links_are_not_article_shaped():
     assert result["type"] == "other"
 
 
-def test_resolved_freshness_blocks_listing_classification():
-    """A dated page is a content unit, not a navigation surface."""
+def test_resolved_freshness_downgrades_listing_but_does_not_block_it():
+    """Freshness is a confidence signal, not a gate.
+
+    Most servers set Last-Modified, so a dated section page is the
+    ordinary case. Gating on tier == "unknown" would drop it through to
+    "other", it would never get sampled, and the audit would land on the
+    wrapper again — the exact bug this classifier exists to prevent.
+    """
     result = classify_page_type(
         _page(
             url="https://example.com/news/",
@@ -197,7 +203,24 @@ def test_resolved_freshness_blocks_listing_classification():
             internal_links=_numeric_links(20, host="https://example.com"),
         )
     )
-    assert result["type"] != "listing"
+    assert result["type"] == "listing"
+    assert result["confidence"] == "medium"
+    assert any("unusual for a listing" in s for s in result["signals"])
+
+
+def test_one_structural_signal_plus_resolved_freshness_is_low_confidence_listing():
+    result = classify_page_type(
+        _page(
+            url="https://example.com/news/",
+            h1_tags=[f"Headline {i}" for i in range(9)],
+            structured_data=[],
+            freshness={"tier": "aging", "best_date": "2026-01-20"},
+            internal_links=[{"url": "https://example.com/about/", "text": "About"}],
+        )
+    )
+    assert result["type"] == "listing"
+    assert result["confidence"] == "low"
+    assert any("aging" in s for s in result["signals"])
 
 
 # --------------------------------------------------------------------------
