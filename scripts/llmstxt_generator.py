@@ -10,6 +10,7 @@ Extended: /llms-full.txt (detailed version)
 """
 
 import sys
+import os
 import json
 import re
 from urllib.parse import urljoin, urlparse
@@ -21,10 +22,30 @@ except ImportError:
     print("ERROR: Required packages not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
 
-DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+# WAF/CDN challenge detection, the browser header set, and the AI crawler
+# roster live in the sibling fetch_page module. Import rather than duplicate:
+# a copy would drift the moment a new Cloudflare marker or bot UA lands.
+# Guarded like the optional imports above — if the sibling module can't be
+# loaded (odd install layout, partial checkout), generation degrades to its
+# previous behaviour: one plain fetch, no challenge handling.
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from fetch_page import AI_CRAWLERS, DEFAULT_HEADERS, is_challenge_page
+    CHALLENGE_FALLBACK_AVAILABLE = True
+except ImportError:  # pragma: no cover - defensive
+    CHALLENGE_FALLBACK_AVAILABLE = False
+    AI_CRAWLERS = {}
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    def is_challenge_page(html, status_code):  # noqa: D103
+        return False
 
 
 def validate_llmstxt(url: str) -> dict:
@@ -147,6 +168,34 @@ def validate_llmstxt(url: str) -> dict:
     return result
 
 
+def _fetch_for_generation(url: str, timeout: int = 30):
+    """Fetch ``url``, retrying once with a bot UA if a WAF challenge is served.
+
+    Returns ``(response, challenge_detected)``. Mirrors the fallback contract
+    in ``fetch_page.fetch_page()`` and ``citability_scorer._fetch_for_scoring``:
+    Cloudflare and friends serve an interstitial to generic scripted
+    user-agents — sometimes with a 200 status — and an llms.txt generated from
+    a "Checking your browser" page is worse than no llms.txt at all. Retry ONCE
+    with the GPTBot user-agent, which challenge-fronted sites commonly
+    allowlist, and only when the body actually looks like a challenge, so an
+    ordinary 403/404/500 never triggers a second request.
+    """
+    response = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+    if not is_challenge_page(response.text, response.status_code):
+        return response, False
+
+    if not AI_CRAWLERS:  # pragma: no cover - defensive, degraded import
+        return response, True
+
+    bot_headers = dict(DEFAULT_HEADERS)
+    bot_headers["User-Agent"] = AI_CRAWLERS["GPTBot"]["ua"]
+    bot_response = requests.get(url, headers=bot_headers, timeout=timeout)
+    if not is_challenge_page(bot_response.text, bot_response.status_code):
+        return bot_response, False
+
+    return bot_response, True
+
+
 def generate_llmstxt(url: str, max_pages: int = 30) -> dict:
     """Generate an llms.txt file by crawling the site."""
     parsed = urlparse(url)
@@ -161,7 +210,16 @@ def generate_llmstxt(url: str, max_pages: int = 30) -> dict:
 
     # Fetch homepage
     try:
-        response = requests.get(url, headers=DEFAULT_HEADERS, timeout=30)
+        response, challenge_detected = _fetch_for_generation(url)
+        if challenge_detected:
+            # Challenged as a browser AND as a bot. Bail out rather than
+            # generate an llms.txt describing the interstitial.
+            result["error"] = (
+                "Failed to fetch homepage: WAF/CDN challenge served to both a "
+                "browser user-agent and a bot user-agent; the real content "
+                "was never reached, so no llms.txt was generated."
+            )
+            return result
         soup = BeautifulSoup(response.text, "lxml")
     except Exception as e:
         result["error"] = f"Failed to fetch homepage: {str(e)}"

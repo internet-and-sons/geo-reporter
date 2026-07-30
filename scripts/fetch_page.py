@@ -1594,6 +1594,11 @@ AGENT_READINESS_ENDPOINTS = {
     "nlweb_mcp": ("/mcp", "NLWeb / MCP", "endpoint"),
 }
 
+# Statuses that mean "the edge refused us", not "the path is absent". A
+# Cloudflare-strict host answers 403 to every path including ones that do
+# not exist, so treating these as evidence either way is a fabrication.
+AGENT_READINESS_INCONCLUSIVE_STATUSES = (401, 403, 429)
+
 
 def check_agent_readiness(url: str, timeout: int = 10) -> dict:
     """Probe the emerging agent/licensing protocol surface (non-scoring).
@@ -1605,14 +1610,24 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
     found semantics per expects-type:
       json/text — HTTP 200 AND body does not look like an HTML page
                   (SPAs serve index.html for unknown paths: soft-404 guard)
-      endpoint  — any response except 404 (NLWeb's /ask and /mcp are POST
-                  endpoints; GET commonly returns 405, which still proves
-                  the route exists)
+      endpoint  — HTTP 2xx or 405. NLWeb's /ask and /mcp are POST endpoints,
+                  so a GET commonly returns 405, which still proves the route
+                  exists. Anything else is NOT evidence of an endpoint.
+
+    Three states, not two. ``found`` answers "is it there?" and
+    ``inconclusive`` answers "were we able to tell?". A WAF that answers 403
+    to every path (Cloudflare-strict sites do exactly this) tells us nothing
+    about what lives behind it — under the old ``status != 404`` rule such a
+    host registered as running BOTH NLWeb endpoints, and that false claim
+    reached a client report. An honest "we could not tell" beats a confident
+    wrong answer, so 401/403/429 and transport errors set ``inconclusive``
+    and leave ``found`` False.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return {"url": url, "checks": {}, "homepage_headers": {},
-                "summary": {"found_count": 0, "checked_count": 0},
+                "summary": {"found_count": 0, "checked_count": 0,
+                            "inconclusive_count": 0},
                 "errors": [f"Unsupported URL scheme: {parsed.scheme!r}"]}
     base = f"{parsed.scheme}://{parsed.netloc}"
 
@@ -1620,7 +1635,9 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
         "url": base,
         "checks": {},
         "homepage_headers": {"content_usage": None, "content_signal": None, "link": None},
-        "summary": {"found_count": 0, "checked_count": len(AGENT_READINESS_ENDPOINTS)},
+        "summary": {"found_count": 0,
+                    "checked_count": len(AGENT_READINESS_ENDPOINTS),
+                    "inconclusive_count": 0},
         "errors": [],
     }
 
@@ -1629,16 +1646,23 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
         return head.startswith("<!doctype html") or head.startswith("<html")
 
     for name, (path, spec, expects) in AGENT_READINESS_ENDPOINTS.items():
-        check = {"path": path, "spec": spec, "status": None, "found": False}
+        check = {"path": path, "spec": spec, "status": None,
+                 "found": False, "inconclusive": False}
         try:
             resp = requests.get(base + path, headers=DEFAULT_HEADERS,
                                 timeout=timeout, allow_redirects=True)
-            check["status"] = resp.status_code
-            if expects == "endpoint":
-                check["found"] = resp.status_code != 404
+            status = resp.status_code
+            check["status"] = status
+            if status in AGENT_READINESS_INCONCLUSIVE_STATUSES:
+                # Refused at the door. We learned nothing about the path.
+                check["inconclusive"] = True
+            elif expects == "endpoint":
+                check["found"] = 200 <= status < 300 or status == 405
             else:
-                check["found"] = resp.status_code == 200 and not _looks_like_html(resp.text)
+                check["found"] = status == 200 and not _looks_like_html(resp.text)
         except Exception as e:
+            # Never reached the server, so absence is unproven.
+            check["inconclusive"] = True
             result["errors"].append(f"{name}: {e}")
         result["checks"][name] = check
 
@@ -1653,6 +1677,9 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
 
     result["summary"]["found_count"] = sum(
         1 for c in result["checks"].values() if c["found"]
+    )
+    result["summary"]["inconclusive_count"] = sum(
+        1 for c in result["checks"].values() if c["inconclusive"]
     )
     return result
 
