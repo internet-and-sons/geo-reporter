@@ -434,7 +434,7 @@ NAVIGATION_PATH_PREFIXES = frozenset(
         "categories", "category", "contact", "faq", "feed", "help",
         "login", "page", "person", "press", "privacy", "rss", "search",
         "section", "sections", "tag", "tags", "terms", "topic", "topics",
-        "wp-admin", "wp-content", "wp-json",
+        "wp-admin", "wp-content", "wp-json", "writer", "writers",
     }
 )
 
@@ -623,6 +623,138 @@ def classify_page_type(page_data: dict) -> dict:
     else:
         signals.append("freshness unresolved (no machine-readable date)")
     return {"type": "other", "confidence": "low", "signals": signals}
+
+
+def _normalize_link(link_url: str, base_url: str) -> str:
+    """Absolute, fragment-free form of a link, for fetching and comparing."""
+    absolute = urljoin(base_url or "", link_url)
+    parsed = urlparse(absolute)
+    return parsed._replace(fragment="").geturl()
+
+
+def _identity_key(url: str) -> str:
+    """Comparison key: ignores the trailing slash and the URL fragment."""
+    parsed = urlparse(url or "")
+    path = (parsed.path or "").rstrip("/")
+    return f"{parsed.netloc.lower()}{path}?{parsed.query}"
+
+
+def _spread_indices(total: int, count: int) -> list:
+    """Evenly spaced indices across range(total), endpoints included.
+
+    Deliberately NOT range(count). The first items on a news section are
+    the featured ones — systematically the freshest and best-edited on
+    the page — so a first-N sample flatters every audit. Spreading the
+    sample is what a human analyst does. 40 candidates, limit 5 ->
+    [0, 9, 19, 29, 39].
+    """
+    if total <= 0 or count <= 0:
+        return []
+    if count >= total:
+        return list(range(total))
+    if count == 1:
+        return [0]
+    step = (total - 1) / (count - 1)
+    picked = []
+    for i in range(count):
+        index = int(i * step)
+        if index not in picked:
+            picked.append(index)
+    return picked
+
+
+def sample_child_articles(page_data: dict, limit: int = 5, timeout: int = 15) -> dict:
+    """Pick and verify the articles beneath a listing page.
+
+    classify_page_type() says "this is a listing"; this says *which
+    articles to audit instead*. Candidate extraction is pure heuristic
+    over the already-fetched links (no network); only the sampled subset
+    is fetched, so a section page with 300 links still costs `limit`
+    requests.
+
+    Every sampled URL is fetched and re-classified. Only pages that come
+    back as `article` land in `sampled` — a URL that fails to fetch, or
+    that turns out to be another listing, is recorded in `errors` with a
+    reason and excluded. Nothing unverified is counted: an audit that
+    claims to have scored 5 articles must have actually seen 5 articles.
+
+    Returns {"candidates": [urls], "sampled": [{"url","type",
+             "confidence"}], "verified_count": int, "errors": [str]}.
+    """
+    result = {"candidates": [], "sampled": [], "verified_count": 0, "errors": []}
+
+    page_data = page_data or {}
+    base_url = page_data.get("url") or ""
+    internal_links = page_data.get("internal_links") or []
+
+    try:
+        host = urlparse(base_url).netloc
+    except ValueError:
+        host = ""
+    self_key = _identity_key(base_url)
+
+    seen = set()
+    for link in internal_links:
+        if isinstance(link, dict):
+            link_url = link.get("url")
+        elif isinstance(link, str):
+            link_url = link
+        else:
+            continue
+        if not link_url or not isinstance(link_url, str):
+            continue
+        if not _looks_like_article_url(link_url, host):
+            continue
+        try:
+            absolute = _normalize_link(link_url, base_url)
+        except ValueError:
+            continue
+        if host and urlparse(absolute).netloc.lower() != host.lower():
+            continue
+        key = _identity_key(absolute)
+        if key == self_key or key in seen:
+            continue
+        seen.add(key)
+        result["candidates"].append(absolute)
+
+    if not result["candidates"] or limit <= 0:
+        return result
+
+    for index in _spread_indices(len(result["candidates"]), limit):
+        child_url = result["candidates"][index]
+        try:
+            child = fetch_page(child_url, timeout=timeout)
+        except Exception as exc:  # defensive: fetch_page swallows its own
+            result["errors"].append(f"{child_url}: fetch failed ({exc})")
+            continue
+
+        status = child.get("status_code")
+        if status is None:
+            reason = "; ".join(child.get("errors") or []) or "no response"
+            result["errors"].append(f"{child_url}: fetch failed ({reason})")
+            continue
+        if status >= 400:
+            result["errors"].append(f"{child_url}: fetch returned HTTP {status}")
+            continue
+
+        classification = classify_page_type(child)
+        if classification.get("type") != "article":
+            result["errors"].append(
+                f"{child_url}: classified as "
+                f"{classification.get('type')} "
+                f"({classification.get('confidence')} confidence), not an "
+                f"article — excluded from the sample"
+            )
+            continue
+
+        result["sampled"].append({
+            "url": child_url,
+            "type": classification.get("type"),
+            "confidence": classification.get("confidence"),
+        })
+
+    result["verified_count"] = len(result["sampled"])
+    return result
 
 
 def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict:
@@ -1764,7 +1896,7 @@ if __name__ == "__main__":
     def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, "
-              "agentready, integrity, full")
+              "agentready, integrity, section, full")
         sys.exit(1)
 
     if len(sys.argv) < 2:
@@ -1811,6 +1943,51 @@ if __name__ == "__main__":
         response = requests.get(target_url, headers=DEFAULT_HEADERS, timeout=30)
         soup = BeautifulSoup(response.text, "lxml")
         data = scan_content_integrity(soup, target_url)
+    elif mode == "section":
+        # "Am I auditing the citable unit?" Classify the URL, and when it
+        # is a navigation surface, name the articles beneath it. The
+        # caller asked about *this* URL, so an article URL is reported as
+        # an article rather than silently redirected to something else.
+        page = fetch_page(target_url, accept_language=accept_language)
+        classification = classify_page_type(page)
+        page_type = classification.get("type")
+        sample = None
+        note = None
+
+        if page_type == "listing":
+            sample = sample_child_articles(page)
+            if classification.get("confidence") == "low":
+                note = (
+                    "Listing classification is low-confidence — this page "
+                    "may be a content page with a link-heavy layout. Treat "
+                    "the sample as provisional and sanity-check the URLs "
+                    "before reporting on them."
+                )
+        elif page_type == "homepage":
+            sample = sample_child_articles(page)
+            note = (
+                "A homepage is mostly a navigation surface, so child "
+                "articles were sampled. Score the homepage itself only for "
+                "entity/brand signals, not for citability."
+            )
+        elif page_type == "article":
+            note = (
+                "This URL is already a citable unit — audit it directly. "
+                "No child sampling needed."
+            )
+        else:
+            note = (
+                "Page is neither an article nor a recognisable listing, so "
+                "no child articles were sampled. Audit it as-is, and treat "
+                "citability findings as applying to this page only."
+            )
+
+        data = {
+            "url": target_url,
+            "classification": classification,
+            "sample": sample,
+            "note": note,
+        }
     elif mode == "full":
         data = {
             "page": fetch_page(target_url, accept_language=accept_language),
