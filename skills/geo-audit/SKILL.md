@@ -49,6 +49,13 @@ It returns `classification` (`article` | `listing` | `homepage` | `other`, with 
 
 If confidence is `low`, say so in the report and describe the page shape you observed rather than asserting a type.
 
+**Unit selection and language trees interact — resolve in this order.** Detect multilingual structure first (hreflang pairs, language path prefixes, `Content-Language`), then select units *within each tree*:
+
+- A listing page belongs to one language tree; its sampled child articles belong to that same tree. Audit and score them together, under that tree's section of the report.
+- If a site has parallel listings per language (e.g. `/he/news/` and `/en/news/`), sample each separately and report per tree. Never merge samples across trees into one score — a site can be dominant in one language and invisible in the other, which is the whole point of contract rule 7.
+- If a sampled article turns out to sit in a different tree than its listing (a cross-linked translation), exclude it from that tree's sample and note it, rather than scoring it in the wrong tree.
+- If the site is single-language, this collapses to the simple case and no per-tree structure is needed.
+
 **Never report listing-page cosmetics as GEO findings.** H1 counts, meta descriptions, teaser word counts and teaser citability on a section page describe the wrapper, not the content anyone cites. A real site owner rejected exactly that report. If a listing page has a genuine problem, it is a *discovery* problem — it fails to link its articles, or the links are broken, or it is not crawlable.
 
 Articles that fail to fetch during sampling are named as excluded in the methodology, never silently dropped and never estimated.
@@ -75,7 +82,7 @@ Articles that fail to fetch during sampling are named as excluded in the methodo
    | `status_code`, `redirect_chain` | response status + redirect history |
    | `has_ssr_content` | **`false` = JS-rendered SPA with no server-side content**; AI crawlers will see an empty page. Flag as a critical issue if this is the case. |
 
-**Multilingual detection (mandatory):** before crawling, determine whether the site is multilingual: look for hreflang link pairs, language path prefixes (`/en/`, `/he/`), and the `Content-Language` response header. If multilingual, run the audit **per language tree**: crawl each tree separately (use `--accept-language <lang>` on fetch_page.py for language-negotiating sites), give each tree its own category scores and findings, and structure the final report with one section per language (contract rule 7). Never average two languages into one score — a site can be dominant in one language and invisible in the other.
+**Multilingual detection (mandatory):** this runs *before* Step 0b's unit selection, not after it — units are then selected and sampled per-language-tree, never pooled across trees. Before crawling, determine whether the site is multilingual: look for hreflang link pairs, language path prefixes (`/en/`, `/he/`), and the `Content-Language` response header. If multilingual, run the audit **per language tree**: crawl each tree separately (use `--accept-language <lang>` on fetch_page.py for language-negotiating sites), give each tree its own category scores and findings, and structure the final report with one section per language (contract rule 7). Never average two languages into one score — a site can be dominant in one language and invisible in the other.
 
 2. Extract these signals from the JSON (no re-fetch needed):
    - Page title, meta description, H1 heading (from `title`, `description`, `h1_tags`)
