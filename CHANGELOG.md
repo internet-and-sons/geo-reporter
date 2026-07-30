@@ -8,6 +8,30 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-07-30
+
+**Theme: audit the right unit.** A client rejected one of our audits, and he was right. We had audited `zman.co.il/democracy` — a news **section listing page** — as though it were the thing AI engines cite. It isn't: a listing is a navigation surface built for humans. The units that get cited are **the articles beneath it**, plus **domain-level access**. Our report had recommended fixing the listing's 19 `<h1>` tags and its boilerplate meta description; re-auditing the articles inverted the conclusions entirely — the article template was already strong (single `<h1>`, `NewsArticle` schema, `dateModified`, unique per-article meta descriptions, full SSR), while the real problems were one Cloudflare rule and one template-level author stub. This release teaches the tool to pick the right unit, and fixes the false signals that same audit exposed.
+
+### Added
+
+- **Page-type classification** (`classify_page_type`) — labels a fetched page `article` / `listing` / `homepage` / `other` with a confidence and the human-readable signals that fired, from data already collected. No network calls.
+- **Child-article sampling** (`sample_child_articles`) + a new **`section` fetch mode** — from a listing, extracts candidate article URLs (excluding nav paths), samples them **evenly spread rather than first-N** so a sample isn't biased toward the freshest featured items, then **verifies each by fetching and re-classifying it**. Unverified or failed candidates are excluded and named, never guessed at. Verification is capped at the sample limit, so there is no runaway crawling.
+- **Unit-selection protocol in `geo-audit`** (Phase 1 Step 0b) — a listing URL now audits the articles beneath it and assesses the listing only as a *discovery path*. Explicit prohibition: never report listing-page cosmetics (H1 counts, meta descriptions, teaser citability) as GEO findings. Sampling resolves **per language tree**, never pooled, so a bilingual site's per-language scores stay honest.
+- **Canonical recommendations rule** (`geo-audit` Phase 3) — a finding recurring across sampled articles is one **domain**, **template**, or **editorial** problem, not N page problems. Every Critical/High fix is labelled with its layer. A newsroom cannot hand-edit 25,000 articles; it can change one template.
+- **Eval scenarios 8 and 9** — right-unit selection, and inconclusive-vs-absent.
+
+### Fixed
+
+- **Citability scoring was lost entirely on WAF-fronted sites.** v0.4.3 gave `fetch_page()` a challenge fallback but `citability_scorer.py` kept its own bare fetch, so on a Cloudflare-strict site it returned a 403 error and the audit silently lost its single largest scoring input (25% of the composite). It now shares the same fallback and discloses `fetch_method` / `challenge_detected`.
+- **A WAF 403 was read as "agent endpoint found".** On a site that refuses every scripted request, `/ask` and `/mcp` both registered as present — the report would have claimed the site runs NLWeb. `found` for endpoint checks now requires 2xx or 405, and a new `inconclusive` state distinguishes "refused us" from "absent". Measured on the site that exposed it: previously reported found; now `found_count: 0`, with seven paths correctly read as genuinely absent (404) and three as inconclusive (403).
+- **Live profile links were reported as broken.** `check_sameas_liveness` sent a spoofed Chrome UA, which Wikimedia refuses per policy T400119 and Facebook rejects — so a client's perfectly good Wikidata and Facebook links were reported as defects to fix. Correct per-host user-agents are now used, and `broken` means **genuinely broken only** (404/410/DNS); refusals go to a separate `inconclusive` list that is a note, not a finding. Re-run against the same site: all five links return 200, `broken` is empty.
+- **`llmstxt_generator` generate-mode** had the same WAF blind spot — it could have generated an llms.txt describing a Cloudflare interstitial. Same fallback applied.
+- **`/writer/…` byline pages were treated as candidate articles** during sampling, consuming the fetch budget on pages that verification then rejected. Added to the navigation-path exclusions.
+
+### Changed
+
+- Listing detection treats resolved freshness as a **confidence signal, not a gate** — an earlier draft required `freshness == unknown`, which would have misclassified any section page whose server sets `Last-Modified` (most of them) as `other`, silently reproducing the original bug.
+
 ## [0.4.3] — 2026-07-29
 
 **Theme: polish & consistency.** Clears the backlog accumulated across v0.4.0–v0.4.2 and the two live evals. Three of these were real defects that silently produced wrong client deliverables.
@@ -270,7 +294,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.4
 [0.4.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.3
 [0.4.2]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.2
 [0.4.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.1
