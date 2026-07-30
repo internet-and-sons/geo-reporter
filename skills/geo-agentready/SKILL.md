@@ -29,10 +29,18 @@ The JSON output:
 
 | Field | Meaning |
 |---|---|
-| `checks.<name>` | One entry per probe: `{path, spec, status, found}` |
+| `checks.<name>` | One entry per probe: `{path, spec, status, found, inconclusive}` |
 | `homepage_headers` | `content_usage`, `content_signal`, `link` headers from the homepage |
-| `summary.found_count` / `checked_count` | Roll-up |
-| `errors[]` | Network failures — render as "not measured", never as absent |
+| `summary.found_count` / `checked_count` / `inconclusive_count` | Roll-up. `found + inconclusive` do **not** have to sum to `checked` — the remainder is genuinely absent |
+| `errors[]` | Transport failures. Each one also sets `inconclusive` on its check — render as "not measured", never as absent |
+
+`found` and `inconclusive` are independent booleans describing three states, not two:
+
+| `found` | `inconclusive` | Meaning | Render as |
+|---|---|---|---|
+| `true` | `false` | The signal is published (200 with non-HTML body; for `endpoint` checks, 2xx or 405) | Present — name the spec |
+| `false` | `false` | The site answered and the path is not there (typically 404) | Absent |
+| `false` | `true` | The site refused us (401/403/429) or the request errored | **Not measured** |
 
 Also run `fetch_page.py <url> robots` and read its `licensing` field: `license_urls` (RSL `License:` directives), `content_usage` (AIPREF rules), `content_signal` (Cloudflare Content Signals) declared in robots.txt.
 
@@ -56,11 +64,23 @@ Group the results into three plain-language clusters:
 Per finding, use the contract format. For a typical all-absent result, the whole section can be one finding:
 
 > **Finding:** The site publishes none of the emerging agent-protocol signals — normal for 2026.
-> **Evidence:** 10 well-known endpoints probed, 0 found; no licensing directives in robots.txt or headers.
+> **Evidence:** 10 well-known endpoints probed, 0 found and 0 inconclusive (every path answered 404); no licensing directives in robots.txt or headers.
 > **Impact:** No action needed today. These specs matter when AI agents start transacting with sites directly; early adoption is a differentiator for developer-facing and commerce sites, not a requirement.
 > **Confidence:** Confirmed.
 
 When something IS found, name the spec, show the path, and say what it enables — e.g. an MCP server card means agent clients can discover the site's tools; RSL means the site has machine-readable licensing terms that AI companies can honor programmatically.
+
+### Inconclusive is not absent
+
+A check is **inconclusive** when the site refused to answer us (401/403/429) or the request errored — we learned nothing about whether the endpoint exists. Render these as:
+
+`— Not measured (site returned <status> to our request; endpoint presence could not be determined)`
+
+Never render an inconclusive check as absent, and never let one into a "the site does not support X" statement.
+
+**On WAF-fronted sites, expect most checks inconclusive.** A site behind Cloudflare or similar may refuse every scripted request, so the honest report is "we could not determine the agent surface from outside" — not "no agent endpoints found". Say which it is.
+
+Note the NLWeb hedge still applies to the checks that DO come back found: `/ask` and `/mcp` are generic paths, so a 200 there may be an unrelated route. Claim NLWeb only when the response is machine-readable or corroborated by another agent signal.
 
 ### Step 3 — Payment posture (cross-reference)
 
@@ -71,4 +91,4 @@ If the live probe (`geo-botaccess`) reported `payment_required_bots`, mention it
 1. **Non-scoring, always.** No numeric score. Never a Critical/High severity for absence.
 2. **Date the specs.** Every mention carries its status: "RFC" (real standard), "IETF draft", "pre-standard". Do not upgrade a draft to a standard.
 3. **Cloudflare context (time-sensitive):** from Sept 15, 2026, Cloudflare blocks AI training bots by default on new ad-supported domains. Sites adopting Cloudflare after that date may be blocking bots without knowing — when the live probe shows unexpected blocks on a recent Cloudflare site, raise this as the likely cause.
-4. **Errors are "not measured."** A network failure on a well-known probe renders as "<check> not measured — <reason>", never as "absent".
+4. **Inconclusive results are "not measured."** A refusal (401/403/429) or a network failure on a well-known probe sets `inconclusive` on that check and renders as "<check> not measured — <reason>", never as "absent". When a run mixes the two, say how many checks were genuinely absent and how many were never answered.
