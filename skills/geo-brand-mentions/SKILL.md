@@ -245,7 +245,21 @@ print(json.dumps(check_sameas_liveness(page.get("structured_data", [])), indent=
 PY
 ```
 
-Returns `{sameas_urls, at_ids, at_id_present, checks:[{url,platform,status,live}], live_count, broken:[urls]}`.
+Returns `{sameas_urls, at_ids, at_id_present, checks:[{url,platform,status,live,inconclusive}], live_count, inconclusive:[urls], broken:[urls]}`.
+
+Every checked link lands in exactly one of three buckets:
+
+| Bucket | What it means | HTTP evidence |
+|---|---|---|
+| `live_count` | The edge resolves | any status < 400 |
+| `inconclusive` | The host refused *our probe* — the link's health is unknown | 401 / 403 / 429 |
+| `broken` | The edge is genuinely dead | 404 / 410, degenerate href (`#`, empty, non-URL), DNS or transport failure |
+
+**Only `broken` is a finding.** It contains links that genuinely fail — 404/410, malformed hrefs, DNS failures. Those are defects the client should fix.
+
+**`inconclusive` is a note, not a finding.** Platforms including Facebook, LinkedIn, Instagram and Wikimedia routinely refuse scripted requests regardless of whether the URL is fine. An inconclusive result is a fact about our probe, not about the client's link. Render it as "could not verify from here" and, if it matters, tell the reader to click it.
+
+This distinction is not cosmetic: a previous audit reported a client's Wikidata and Facebook links as broken. Both were live. Reporting a working link as broken costs trust in every other number in the report.
 
 **Render the results as contract findings:**
 
@@ -256,13 +270,20 @@ Returns `{sameas_urls, at_ids, at_id_present, checks:[{url,platform,status,live}
   > **Fix:** Repair or remove each dead `sameAs` in the Organization/Person JSON-LD — point to the live profile URL, or drop the entry. Developer task, minutes.
   > **Confidence:** Confirmed. (We made the request and observed the failure.)
 
+  Only list URLs from `broken` here. A link in `inconclusive` must never appear in this finding, in its count, or in its evidence.
+
+- **Unverifiable sameAs links** (`inconclusive` non-empty) — **not** a finding. Add one plain note under the sameAs section:
+  > N declared `sameAs` links could not be verified from here — [list each URL + status, e.g. "https://www.facebook.com/brand → 403"]. These platforms block scripted requests as a matter of policy; the links may well be fine. Open them in a browser to confirm.
+
+  No severity, no fix task, no impact paragraph — nothing was shown to be wrong.
+
 - **Missing `@id`** (`at_id_present == false`) on the Organization/Person node — one recommendation, Confidence Likely:
   > **Finding:** The Organization/Person schema has no `@id`, so its identity is not anchored across the site.
   > **Impact:** A stable `@id` is the canonical entity handle that lets nodes on other pages (Article `author`, Product `brand`, breadcrumb) point back to one entity instead of re-declaring loosely-matched copies. Without it, the entity graph is a set of look-alikes rather than one resolved node.
   > **Fix:** Add a stable, absolute `@id` (e.g. `https://example.com/#organization`) to the Organization/Person block and reference it by `@id` from other schema nodes. Developer task, minutes.
   > **Confidence:** Likely.
 
-  Cross-page `@id` **consistency** (does every page reuse the same `@id` for the same entity?) is a full-site check owned by the audit orchestrator — here, flag only the presence/absence of `@id` on this page's Organization/Person node. A live scan with `live_count == len(sameas_urls)` and `at_id_present == true` is a small positive trust signal worth stating.
+  Cross-page `@id` **consistency** (does every page reuse the same `@id` for the same entity?) is a full-site check owned by the audit orchestrator — here, flag only the presence/absence of `@id` on this page's Organization/Person node. A scan with an empty `broken` list and `at_id_present == true` is a small positive trust signal worth stating — say "no broken edges found", not "all edges verified", if anything was inconclusive.
 
 ---
 

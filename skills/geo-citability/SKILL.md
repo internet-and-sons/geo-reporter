@@ -190,6 +190,10 @@ Fields:
 | `top_5_citable[]` | Strongest blocks — each has `heading`, `content`, `word_count`, `total_score`, `breakdown` (per-dimension), `grade` |
 | `bottom_5_citable[]` | Weakest blocks — same shape, these are your rewrite targets |
 | `all_blocks[]` | Every scored block |
+| `fetch_method` | `"default"` (ordinary browser UA) or `"bot_ua_fallback"` (retried as an AI crawler after a WAF challenge) |
+| `challenge_detected` | `true` when the first request hit a WAF/JS challenge |
+
+**Disclose the fetch method.** The scorer returns `fetch_method` and `challenge_detected`. When `fetch_method == "bot_ua_fallback"`, the site's WAF challenged an ordinary browser request and scores were computed from the content an **AI crawler** receives. State this in the report methodology — for a GEO audit that is arguably the more relevant view, but the reader must know which view was measured.
 
 Read `top_5_citable` into the "Strongest Content Blocks" output section and `bottom_5_citable` into "Weakest Content Blocks (Rewrite Priority)". `average_citability_score` becomes the Page Citability Score in the summary.
 
@@ -220,6 +224,7 @@ Generate a file called `GEO-CITABILITY-SCORE.md`:
 **Analysis Date:** [Date]
 **Overall Citability Score: [X]/100**
 **Citability Coverage:** [X]% of content blocks score above 70
+**Measured on:** [Standard browser request | Content served to an AI crawler — the site's WAF challenged our normal request (`fetch_method: bot_ua_fallback`)]
 
 ---
 

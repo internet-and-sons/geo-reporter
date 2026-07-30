@@ -32,9 +32,37 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
 
 **Step 0: Ownership check (contract rule 13).** Establish whether this is the user's own site or a third party's. If third-party/competitor, run in External Observation mode: label the report "External Observation Only", cap the crawl at homepage + ≤20 pages, and present observations WITHOUT a /100 composite score. When ambiguous, ask "Is this your own site, or a competitor's / third party's?"
 
+**Step 0b: Select the right unit to audit (mandatory).**
+
+Run the classifier before fetching anything else:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> section
+```
+
+It returns `classification` (`article` | `listing` | `homepage` | `other`, with confidence and the signals that fired) and, for listings, a verified `sample` of the articles beneath it.
+
+- **`article`** → audit this page as given. It is already a citable unit.
+- **`listing`** (section, category, tag, or feed page) → **the listing is not the citable unit.** It is a navigation surface built for humans; AI engines cite the articles beneath it. Audit the **sampled child articles** as the primary units. Assess the listing itself only as a *discovery path*: is it crawlable, does it link the articles, do the links resolve. State in the report which unit you audited and why, so the reader knows what was measured.
+- **`homepage`** → audit as given, and for publishers also sample articles; a homepage is likewise mostly a navigation surface.
+- **`other`** → audit as given.
+
+If confidence is `low`, say so in the report and describe the page shape you observed rather than asserting a type.
+
+**Unit selection and language trees interact — resolve in this order.** Detect multilingual structure first (hreflang pairs, language path prefixes, `Content-Language`), then select units *within each tree*:
+
+- A listing page belongs to one language tree; its sampled child articles belong to that same tree. Audit and score them together, under that tree's section of the report.
+- If a site has parallel listings per language (e.g. `/he/news/` and `/en/news/`), sample each separately and report per tree. Never merge samples across trees into one score — a site can be dominant in one language and invisible in the other, which is the whole point of contract rule 7.
+- If a sampled article turns out to sit in a different tree than its listing (a cross-linked translation), exclude it from that tree's sample and note it, rather than scoring it in the wrong tree.
+- If the site is single-language, this collapses to the simple case and no per-tree structure is needed.
+
+**Never report listing-page cosmetics as GEO findings.** H1 counts, meta descriptions, teaser word counts and teaser citability on a section page describe the wrapper, not the content anyone cites. A real site owner rejected exactly that report. If a listing page has a genuine problem, it is a *discovery* problem — it fails to link its articles, or the links are broken, or it is not crawlable.
+
+Articles that fail to fetch during sampling are named as excluded in the methodology, never silently dropped and never estimated.
+
 **Step 1: Fetch Homepage and Detect Business Type**
 
-1. Run the structured page fetcher — **always use this, not `WebFetch`, for the target URL.** `WebFetch` converts HTML to markdown, strips `<head>`, drops JSON-LD, hides HTTP headers, and silently returns empty pages for JS-rendered SPAs. The packaged fetcher avoids all four problems:
+1. Run the structured page fetcher — **always use this, not `WebFetch`, for every unit Step 0b selected** (the given URL when it is the citable unit, each sampled child article when it is not). `WebFetch` converts HTML to markdown, strips `<head>`, drops JSON-LD, hides HTTP headers, and silently returns empty pages for JS-rendered SPAs. The packaged fetcher avoids all four problems:
 
    ```bash
    python "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/fetch_page.py" <url> page
@@ -54,7 +82,7 @@ Traditional SEO optimizes for search engine rankings. GEO optimizes for AI citat
    | `status_code`, `redirect_chain` | response status + redirect history |
    | `has_ssr_content` | **`false` = JS-rendered SPA with no server-side content**; AI crawlers will see an empty page. Flag as a critical issue if this is the case. |
 
-**Multilingual detection (mandatory):** before crawling, determine whether the site is multilingual: look for hreflang link pairs, language path prefixes (`/en/`, `/he/`), and the `Content-Language` response header. If multilingual, run the audit **per language tree**: crawl each tree separately (use `--accept-language <lang>` on fetch_page.py for language-negotiating sites), give each tree its own category scores and findings, and structure the final report with one section per language (contract rule 7). Never average two languages into one score — a site can be dominant in one language and invisible in the other.
+**Multilingual detection (mandatory):** this runs *before* Step 0b's unit selection, not after it — units are then selected and sampled per-language-tree, never pooled across trees. Before crawling, determine whether the site is multilingual: look for hreflang link pairs, language path prefixes (`/en/`, `/he/`), and the `Content-Language` response header. If multilingual, run the audit **per language tree**: crawl each tree separately (use `--accept-language <lang>` on fetch_page.py for language-negotiating sites), give each tree its own category scores and findings, and structure the final report with one section per language (contract rule 7). Never average two languages into one score — a site can be dominant in one language and invisible in the other.
 
 2. Extract these signals from the JSON (no re-fetch needed):
    - Page title, meta description, H1 heading (from `title`, `description`, `h1_tags`)
@@ -97,6 +125,7 @@ If `count == 0`, no sitemap was discoverable. Fall back to internal-link crawlin
 For both paths: respect `robots.txt` (cross-reference with `fetch_page.py <url> robots`), skip pages disallowed for the default user-agent, and enforce a 30-second timeout per fetch.
 
 Page prioritization within the 50-page cap:
+- The units selected in Step 0b (always include — sampled child articles are the primary units, not optional extras)
 - Homepage (always include)
 - Top-level navigation pages
 - High-value pages (pricing, about, contact, key service/product pages)
@@ -121,6 +150,8 @@ For each page in the crawl set, record:
 ### Phase 2: Parallel Subagent Delegation
 
 Delegate analysis to 5 specialized subagents. Each subagent operates on the collected page data and produces a category score (0-100) plus findings.
+
+Content-level scoring (citability, E-E-A-T, schema, platform readiness) runs on the **units selected in Step 0b** — never on a listing page's teasers. Domain-level probes (crawler reachability, robots.txt, llms.txt, brand presence) run on the domain regardless. Every subagent reports findings at their canonical layer (see Phase 3).
 
 **Subagent 1: AI Visibility Analysis (geo-ai-visibility)**
 - Analyze content blocks for quotability by AI systems (citability scoring)
@@ -186,6 +217,18 @@ GEO_Score = (Citability * 0.25) + (Brand * 0.20) + (EEAT * 0.20) + (Technical * 
 | 40-59 | Poor | Weak GEO signals; AI systems may struggle to cite or recommend |
 | 0-39 | Critical | Minimal GEO optimization; site is largely invisible to AI systems |
 
+#### Canonical recommendations
+
+**Recommendations must be canonical.** When a finding recurs across sampled articles, it is not N page-level problems — it is one **template**, **domain**, or **editorial** problem. Write the fix at the layer where it lives and say so explicitly:
+
+| Layer | Means | Example |
+|---|---|---|
+| **domain** | One setting, affects every URL | A WAF rule blocking AI crawlers |
+| **template** | One code change, affects every page of that type | The article template's author schema node |
+| **editorial** | A standing habit for the desk | "Open each article with a checkable fact" |
+
+Label every Critical/High fix with its layer. A per-page fix list for a template-level defect is unactionable at publisher scale — a newsroom cannot hand-edit 25,000 articles, but it can change one template. If a finding appears on 4 of 5 sampled articles, say "this is in the article template" rather than listing four URLs.
+
 #### Evaluator self-check (contract rule 12)
 
 Before delivering, run the 8-point self-check from REPORT-CONTRACT.md rule 12 (evidence on every Critical/High, score matches findings, no fabricated metrics, no YMYL schema without credentials, no duplicate findings, scope respected, fixes name specific elements, high-risk code withheld). Fix any failure before output.
@@ -240,6 +283,8 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 
 **Audit Date:** [Date] · **URL:** [URL] · **Business Type:** [Type] · **Pages Analyzed:** [Count] · **Languages:** [e.g. Hebrew + English]
 
+**Unit audited:** [what was actually measured and why — e.g. "5 articles sampled from this section listing; the listing itself was assessed only as a discovery path, because AI engines cite articles, not section pages". Name any sampled article that failed to fetch and was excluded.]
+
 ## TL;DR
 
 **GEO Score: [X]/100 ([Rating])** [— up/down N since last audit]
@@ -256,12 +301,13 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 
 ## Findings
 
-[Per language tree if multilingual. Each finding in contract format:]
+[Per language tree if multilingual. Each finding in contract format. Roll findings that recur across sampled articles up to their canonical layer — one template/domain/editorial finding, not one per URL.]
 
 ### [Finding title in plain language]
-**Evidence:** [what was observed, quoted]
+**Layer:** [domain | template | editorial | page] — required on every Critical/High finding
+**Evidence:** [what was observed, quoted. For a rolled-up finding: "N of M sampled articles", with the sampled URLs in the appendix]
 **Impact:** [reader terms; say "no action needed" when true]
-**Fix:** [paste-ready artifact, or task + owner + effort. For content fixes: proposed title, structure, and who currently wins the query]
+**Fix:** [paste-ready artifact, or task + owner + effort, written at the layer named above. For content fixes: proposed title, structure, and who currently wins the query]
 **Confidence:** [Confirmed | Likely | Hypothesis]
 
 ## Score Breakdown
@@ -280,7 +326,7 @@ Generate a file called `GEO-AUDIT-REPORT.md` with the following structure:
 [Week-by-week checkboxes, each item carrying owner + effort tags.]
 
 ## Appendix
-[Raw tables: per-bot crawler matrix with the contract status legend printed above it, all-blocks citability scores, header dumps, pages analyzed, methodology, checks that did not run ("<metric> not measured — <how>").]
+[Raw tables: per-bot crawler matrix with the contract status legend printed above it, all-blocks citability scores, header dumps, pages analyzed, unit-selection methodology (classification + confidence + signals that fired, the sampled article URLs, and any sampled article excluded, with its reason — failed to fetch, or belonged to a different language tree than its listing), checks that did not run ("<metric> not measured — <how>").]
 ```
 
 ---

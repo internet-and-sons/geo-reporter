@@ -38,6 +38,23 @@ WIKIMEDIA_HEADERS = {
     "Accept": "application/json",
 }
 
+# Headers for sameAs liveness probing. Deliberately NOT the spoofed Chrome UA:
+# several major hosts refuse a browser UA coming from a scripted client
+# (Wikimedia per policy T400119 -> 403, Facebook -> 400), and we then reported
+# the client's perfectly good profile links as broken. A descriptive UA with
+# contact info gets 200 from both.
+LIVENESS_HEADERS = {
+    "User-Agent": "GEO-Reporter/0.4 (https://github.com/internet-and-sons/geo-reporter; tal@internetandsons.com) python-requests",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+# A refusal, not a verdict. 401/403/429 mean the host declined to answer us;
+# whether the URL resolves for a human is unknown. These must never land in
+# ``broken`` — that list is what a client is told to go fix.
+LIVENESS_INCONCLUSIVE_STATUSES = (401, 403, 429)
+
+_WIKIMEDIA_HOST_SUFFIXES = ("wikipedia.org", "wikidata.org")
+
 
 def check_youtube_presence(brand_name: str) -> dict:
     """Check brand presence on YouTube."""
@@ -223,6 +240,14 @@ def check_sameas_liveness(structured_data, timeout=10) -> dict:
     Non-scoring: a broken sameAs link is a *finding* for human review, not
     a score change. The entity graph AI engines walk to confirm identity
     is only as trustworthy as its links resolve.
+
+    Three buckets, not two. ``broken`` means the link is genuinely dead —
+    404/410, a degenerate href, or a DNS/transport failure — because that is
+    what a client is handed as a defect to fix. A host that answers 401/403/429
+    to our probe has told us nothing about the link, so it goes to
+    ``inconclusive`` instead. Reporting an unreachable-to-us link as broken is
+    how two live Wikidata and Facebook profiles ended up in a client's defect
+    list.
     """
     result = {
         "sameas_urls": [],
@@ -231,6 +256,7 @@ def check_sameas_liveness(structured_data, timeout=10) -> dict:
         "checks": [],
         "live_count": 0,
         "broken": [],
+        "inconclusive": [],
     }
 
     def _walk(nodes):
@@ -266,20 +292,38 @@ def check_sameas_liveness(structured_data, timeout=10) -> dict:
         if url.startswith("http://") or url.startswith("https://"):
             status = _probe_liveness(url, timeout)
         live = status is not None and status < 400
+        inconclusive = status in LIVENESS_INCONCLUSIVE_STATUSES
         result["checks"].append(
             {
                 "url": url,
                 "platform": _classify_sameas_platform(url),
                 "status": status,
                 "live": live,
+                "inconclusive": inconclusive,
             }
         )
         if live:
             result["live_count"] += 1
+        elif inconclusive:
+            result["inconclusive"].append(url)
         else:
             result["broken"].append(url)
 
     return result
+
+
+def _liveness_headers(url: str) -> dict:
+    """Pick the probe headers for a host.
+
+    Wikimedia properties reject browser-spoofed UAs outright (policy T400119),
+    so they get the API-etiquette header set already defined for the Wikipedia
+    checks. Everything else gets a descriptive UA too — honesty is not a
+    Wikimedia-specific requirement, it is just where the breakage was loudest.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if any(host == s or host.endswith("." + s) for s in _WIKIMEDIA_HOST_SUFFIXES):
+        return WIKIMEDIA_HEADERS
+    return LIVENESS_HEADERS
 
 
 def _probe_liveness(url: str, timeout) -> "int | None":
@@ -287,9 +331,10 @@ def _probe_liveness(url: str, timeout) -> "int | None":
 
     Returns the final HTTP status code, or None if both attempts fail.
     """
+    headers = _liveness_headers(url)
     try:
         resp = requests.head(
-            url, headers=DEFAULT_HEADERS, allow_redirects=True, timeout=timeout
+            url, headers=headers, allow_redirects=True, timeout=timeout
         )
         status = resp.status_code
     except requests.RequestException:
@@ -299,7 +344,7 @@ def _probe_liveness(url: str, timeout) -> "int | None":
         try:
             resp = requests.get(
                 url,
-                headers=DEFAULT_HEADERS,
+                headers=headers,
                 allow_redirects=True,
                 timeout=timeout,
                 stream=True,

@@ -418,6 +418,345 @@ def extract_freshness(structured_data, soup, headers) -> dict:
     return result
 
 
+# Schema.org @types that mark a page as a standalone content unit — the
+# thing an AI engine actually cites. Everything else (WebSite,
+# CollectionPage, NewsMediaOrganization, ...) describes a wrapper.
+ARTICLE_SCHEMA_TYPES = frozenset(
+    {"article", "newsarticle", "blogposting", "report"}
+)
+
+# First path segment values that mark a navigation surface rather than a
+# content unit. A /tag/politics/ or /writer/37401/ link is how humans
+# browse; it is not the citable article.
+NAVIGATION_PATH_PREFIXES = frozenset(
+    {
+        "about", "archive", "archives", "author", "authors", "cart",
+        "categories", "category", "contact", "faq", "feed", "help",
+        "login", "page", "person", "press", "privacy", "rss", "search",
+        "section", "sections", "tag", "tags", "terms", "topic", "topics",
+        "wp-admin", "wp-content", "wp-json", "writer", "writers",
+    }
+)
+
+_NUMERIC_ID_SEGMENT = re.compile(r"^\d{4,}$")
+_DATE_PATH = re.compile(r"/(19|20)\d{2}/\d{1,2}(/|$)")
+_HYPHENATED_SLUG = re.compile(r"^[^/]*[a-z0-9]+(-[a-z0-9]+){1,}[^/]*$", re.IGNORECASE)
+
+# Listing thresholds. Both are deliberately loose: this is a routing hint,
+# not a score, and the cost of a false "listing" is one extra sampling
+# pass while the cost of a false "article" is auditing the wrapper.
+LISTING_MIN_H1S = 4          # "> 3" — a content unit has one h1
+LISTING_MIN_ARTICLE_LINKS = 10
+
+
+def _looks_like_article_url(link_url: str, host: str) -> bool:
+    """Heuristic: is this same-host link a content unit or navigation?
+
+    Content-shaped: a numeric ID segment of 4+ digits (/708066/), a date
+    segment (/2026/07/...), or a multi-word hyphenated slug. Navigation:
+    /about/, /tag/politics/, /writer/37401/ and friends.
+    """
+    if not link_url or not isinstance(link_url, str):
+        return False
+    try:
+        parsed = urlparse(link_url)
+    except ValueError:
+        return False
+    if parsed.netloc and host and parsed.netloc.lower() != host.lower():
+        return False
+    path = parsed.path or ""
+    segments = [seg for seg in path.split("/") if seg]
+    if not segments:
+        return False
+    if segments[0].lower() in NAVIGATION_PATH_PREFIXES:
+        return False
+    if any(_NUMERIC_ID_SEGMENT.match(seg) for seg in segments):
+        return True
+    if _DATE_PATH.search(path):
+        return True
+    last = segments[-1]
+    # Strip a trailing file extension before slug-testing (/a-b-c.html).
+    last = re.sub(r"\.(html?|php|aspx?)$", "", last, flags=re.IGNORECASE)
+    if "-" in last and len(last) > 8 and _HYPHENATED_SLUG.match(last):
+        return True
+    return False
+
+
+def _iter_schema_nodes(structured_data):
+    """Yield every dict node in a JSON-LD blob, descending into @graph."""
+    stack = list(structured_data or [])
+    seen = 0
+    while stack and seen < 500:
+        node = stack.pop()
+        seen += 1
+        if isinstance(node, dict):
+            yield node
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
+
+
+def _article_schema_types(structured_data) -> list:
+    """Article-family @type values present in the page's JSON-LD."""
+    found = []
+    for node in _iter_schema_nodes(structured_data):
+        raw = node.get("@type")
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            name = value.rsplit("/", 1)[-1].strip()
+            if name.lower() in ARTICLE_SCHEMA_TYPES and name not in found:
+                found.append(name)
+    return found
+
+
+def classify_page_type(page_data: dict) -> dict:
+    """Decide whether a fetched page is the citable unit or a wrapper.
+
+    Pure function over an existing fetch_page() result — no network. A
+    news section page (zman.co.il/democracy) is a human navigation
+    surface; the units AI engines cite are the articles beneath it.
+    Auditing the wrapper produces recommendations about the wrapper's
+    19 h1s and boilerplate description, none of which govern citation.
+
+    Returns {"type": "article"|"listing"|"homepage"|"other",
+             "confidence": "high"|"medium"|"low",
+             "signals": [human-readable evidence strings]}.
+    The signals are quoted verbatim as Evidence in the report, so they
+    are written for a client reading them, not for a debugger.
+    """
+    page_data = page_data or {}
+    url = page_data.get("url") or ""
+    h1_tags = page_data.get("h1_tags") or []
+    structured_data = page_data.get("structured_data") or []
+    freshness = page_data.get("freshness") or {}
+    internal_links = page_data.get("internal_links") or []
+
+    h1_count = len(h1_tags)
+    tier = freshness.get("tier") or "unknown"
+    freshness_resolved = tier != "unknown"
+
+    try:
+        parsed_url = urlparse(url)
+    except ValueError:
+        parsed_url = None
+    host = parsed_url.netloc if parsed_url else ""
+    path = (parsed_url.path if parsed_url else "") or ""
+
+    # --- homepage: checked first, it outranks every other signal -------
+    if path in ("", "/"):
+        return {
+            "type": "homepage",
+            "confidence": "high",
+            "signals": ["URL is the site root (no path segment)"],
+        }
+
+    # --- gather evidence ----------------------------------------------
+    article_types = _article_schema_types(structured_data)
+
+    article_link_urls = set()
+    for link in internal_links:
+        if isinstance(link, dict):
+            link_url = link.get("url")
+        elif isinstance(link, str):
+            link_url = link
+        else:
+            continue
+        if _looks_like_article_url(link_url, host):
+            article_link_urls.add(link_url)
+    article_link_count = len(article_link_urls)
+
+    signals = []
+
+    # --- article -------------------------------------------------------
+    if article_types:
+        signals.append(f"{'/'.join(article_types)} schema present")
+        if h1_count == 1:
+            signals.append("exactly 1 h1 element")
+        elif h1_count:
+            signals.append(f"{h1_count} h1 elements")
+        else:
+            signals.append("no h1 element")
+        if freshness_resolved:
+            signals.append(f"freshness resolved ({tier})")
+        else:
+            signals.append("freshness unresolved (no machine-readable date)")
+        confidence = "high" if (h1_count == 1 and freshness_resolved) else "medium"
+        return {"type": "article", "confidence": confidence, "signals": signals}
+
+    # --- listing -------------------------------------------------------
+    #
+    # The two structural signals below are what a listing *is*, so they
+    # gate the classification. Unresolved freshness is only a booster:
+    # most servers set Last-Modified, so requiring "unknown" would drop
+    # an ordinary dated section page through to "other", it would never
+    # get sampled, and we'd be back to auditing the wrapper. zman having
+    # no resolvable date is luck, not the general case.
+    many_h1s = h1_count > LISTING_MIN_H1S - 1
+    many_article_links = article_link_count >= LISTING_MIN_ARTICLE_LINKS
+    if many_h1s or many_article_links:
+        signals.append("no Article-family schema")
+        if many_h1s:
+            signals.append(f"{h1_count} h1 elements")
+        if many_article_links:
+            signals.append(f"{article_link_count} article-shaped internal links")
+        if freshness_resolved:
+            signals.append(f"freshness resolved ({tier}) — unusual for a listing")
+        else:
+            signals.append("freshness unresolved (no machine-readable date)")
+        both_signals = many_h1s and many_article_links
+        if both_signals:
+            confidence = "high" if not freshness_resolved else "medium"
+        else:
+            confidence = "medium" if not freshness_resolved else "low"
+        return {"type": "listing", "confidence": confidence, "signals": signals}
+
+    # --- other ---------------------------------------------------------
+    signals.append("no Article-family schema")
+    signals.append(f"{h1_count} h1 element{'' if h1_count == 1 else 's'}")
+    signals.append(f"{article_link_count} article-shaped internal links")
+    if freshness_resolved:
+        signals.append(f"freshness resolved ({tier})")
+    else:
+        signals.append("freshness unresolved (no machine-readable date)")
+    return {"type": "other", "confidence": "low", "signals": signals}
+
+
+def _normalize_link(link_url: str, base_url: str) -> str:
+    """Absolute, fragment-free form of a link, for fetching and comparing."""
+    absolute = urljoin(base_url or "", link_url)
+    parsed = urlparse(absolute)
+    return parsed._replace(fragment="").geturl()
+
+
+def _identity_key(url: str) -> str:
+    """Comparison key: ignores the trailing slash and the URL fragment."""
+    parsed = urlparse(url or "")
+    path = (parsed.path or "").rstrip("/")
+    return f"{parsed.netloc.lower()}{path}?{parsed.query}"
+
+
+def _spread_indices(total: int, count: int) -> list:
+    """Evenly spaced indices across range(total), endpoints included.
+
+    Deliberately NOT range(count). The first items on a news section are
+    the featured ones — systematically the freshest and best-edited on
+    the page — so a first-N sample flatters every audit. Spreading the
+    sample is what a human analyst does. 40 candidates, limit 5 ->
+    [0, 9, 19, 29, 39].
+    """
+    if total <= 0 or count <= 0:
+        return []
+    if count >= total:
+        return list(range(total))
+    if count == 1:
+        return [0]
+    step = (total - 1) / (count - 1)
+    picked = []
+    for i in range(count):
+        index = int(i * step)
+        if index not in picked:
+            picked.append(index)
+    return picked
+
+
+def sample_child_articles(page_data: dict, limit: int = 5, timeout: int = 15) -> dict:
+    """Pick and verify the articles beneath a listing page.
+
+    classify_page_type() says "this is a listing"; this says *which
+    articles to audit instead*. Candidate extraction is pure heuristic
+    over the already-fetched links (no network); only the sampled subset
+    is fetched, so a section page with 300 links still costs `limit`
+    requests.
+
+    Every sampled URL is fetched and re-classified. Only pages that come
+    back as `article` land in `sampled` — a URL that fails to fetch, or
+    that turns out to be another listing, is recorded in `errors` with a
+    reason and excluded. Nothing unverified is counted: an audit that
+    claims to have scored 5 articles must have actually seen 5 articles.
+
+    Returns {"candidates": [urls], "sampled": [{"url","type",
+             "confidence"}], "verified_count": int, "errors": [str]}.
+    """
+    result = {"candidates": [], "sampled": [], "verified_count": 0, "errors": []}
+
+    page_data = page_data or {}
+    base_url = page_data.get("url") or ""
+    internal_links = page_data.get("internal_links") or []
+
+    try:
+        host = urlparse(base_url).netloc
+    except ValueError:
+        host = ""
+    self_key = _identity_key(base_url)
+
+    seen = set()
+    for link in internal_links:
+        if isinstance(link, dict):
+            link_url = link.get("url")
+        elif isinstance(link, str):
+            link_url = link
+        else:
+            continue
+        if not link_url or not isinstance(link_url, str):
+            continue
+        if not _looks_like_article_url(link_url, host):
+            continue
+        try:
+            absolute = _normalize_link(link_url, base_url)
+        except ValueError:
+            continue
+        if host and urlparse(absolute).netloc.lower() != host.lower():
+            continue
+        key = _identity_key(absolute)
+        if key == self_key or key in seen:
+            continue
+        seen.add(key)
+        result["candidates"].append(absolute)
+
+    if not result["candidates"] or limit <= 0:
+        return result
+
+    for index in _spread_indices(len(result["candidates"]), limit):
+        child_url = result["candidates"][index]
+        try:
+            child = fetch_page(child_url, timeout=timeout)
+        except Exception as exc:  # defensive: fetch_page swallows its own
+            result["errors"].append(f"{child_url}: fetch failed ({exc})")
+            continue
+
+        status = child.get("status_code")
+        if status is None:
+            reason = "; ".join(child.get("errors") or []) or "no response"
+            result["errors"].append(f"{child_url}: fetch failed ({reason})")
+            continue
+        if status >= 400:
+            result["errors"].append(f"{child_url}: fetch returned HTTP {status}")
+            continue
+
+        classification = classify_page_type(child)
+        if classification.get("type") != "article":
+            result["errors"].append(
+                f"{child_url}: classified as "
+                f"{classification.get('type')} "
+                f"({classification.get('confidence')} confidence), not an "
+                f"article — excluded from the sample"
+            )
+            continue
+
+        result["sampled"].append({
+            "url": child_url,
+            "type": classification.get("type"),
+            "confidence": classification.get("confidence"),
+        })
+
+    result["verified_count"] = len(result["sampled"])
+    return result
+
+
 def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict:
     """Fetch a page and return structured analysis data.
 
@@ -1255,6 +1594,11 @@ AGENT_READINESS_ENDPOINTS = {
     "nlweb_mcp": ("/mcp", "NLWeb / MCP", "endpoint"),
 }
 
+# Statuses that mean "the edge refused us", not "the path is absent". A
+# Cloudflare-strict host answers 403 to every path including ones that do
+# not exist, so treating these as evidence either way is a fabrication.
+AGENT_READINESS_INCONCLUSIVE_STATUSES = (401, 403, 429)
+
 
 def check_agent_readiness(url: str, timeout: int = 10) -> dict:
     """Probe the emerging agent/licensing protocol surface (non-scoring).
@@ -1266,14 +1610,24 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
     found semantics per expects-type:
       json/text — HTTP 200 AND body does not look like an HTML page
                   (SPAs serve index.html for unknown paths: soft-404 guard)
-      endpoint  — any response except 404 (NLWeb's /ask and /mcp are POST
-                  endpoints; GET commonly returns 405, which still proves
-                  the route exists)
+      endpoint  — HTTP 2xx or 405. NLWeb's /ask and /mcp are POST endpoints,
+                  so a GET commonly returns 405, which still proves the route
+                  exists. Anything else is NOT evidence of an endpoint.
+
+    Three states, not two. ``found`` answers "is it there?" and
+    ``inconclusive`` answers "were we able to tell?". A WAF that answers 403
+    to every path (Cloudflare-strict sites do exactly this) tells us nothing
+    about what lives behind it — under the old ``status != 404`` rule such a
+    host registered as running BOTH NLWeb endpoints, and that false claim
+    reached a client report. An honest "we could not tell" beats a confident
+    wrong answer, so 401/403/429 and transport errors set ``inconclusive``
+    and leave ``found`` False.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return {"url": url, "checks": {}, "homepage_headers": {},
-                "summary": {"found_count": 0, "checked_count": 0},
+                "summary": {"found_count": 0, "checked_count": 0,
+                            "inconclusive_count": 0},
                 "errors": [f"Unsupported URL scheme: {parsed.scheme!r}"]}
     base = f"{parsed.scheme}://{parsed.netloc}"
 
@@ -1281,7 +1635,9 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
         "url": base,
         "checks": {},
         "homepage_headers": {"content_usage": None, "content_signal": None, "link": None},
-        "summary": {"found_count": 0, "checked_count": len(AGENT_READINESS_ENDPOINTS)},
+        "summary": {"found_count": 0,
+                    "checked_count": len(AGENT_READINESS_ENDPOINTS),
+                    "inconclusive_count": 0},
         "errors": [],
     }
 
@@ -1290,16 +1646,23 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
         return head.startswith("<!doctype html") or head.startswith("<html")
 
     for name, (path, spec, expects) in AGENT_READINESS_ENDPOINTS.items():
-        check = {"path": path, "spec": spec, "status": None, "found": False}
+        check = {"path": path, "spec": spec, "status": None,
+                 "found": False, "inconclusive": False}
         try:
             resp = requests.get(base + path, headers=DEFAULT_HEADERS,
                                 timeout=timeout, allow_redirects=True)
-            check["status"] = resp.status_code
-            if expects == "endpoint":
-                check["found"] = resp.status_code != 404
+            status = resp.status_code
+            check["status"] = status
+            if status in AGENT_READINESS_INCONCLUSIVE_STATUSES:
+                # Refused at the door. We learned nothing about the path.
+                check["inconclusive"] = True
+            elif expects == "endpoint":
+                check["found"] = 200 <= status < 300 or status == 405
             else:
-                check["found"] = resp.status_code == 200 and not _looks_like_html(resp.text)
+                check["found"] = status == 200 and not _looks_like_html(resp.text)
         except Exception as e:
+            # Never reached the server, so absence is unproven.
+            check["inconclusive"] = True
             result["errors"].append(f"{name}: {e}")
         result["checks"][name] = check
 
@@ -1314,6 +1677,9 @@ def check_agent_readiness(url: str, timeout: int = 10) -> dict:
 
     result["summary"]["found_count"] = sum(
         1 for c in result["checks"].values() if c["found"]
+    )
+    result["summary"]["inconclusive_count"] = sum(
+        1 for c in result["checks"].values() if c["inconclusive"]
     )
     return result
 
@@ -1557,7 +1923,7 @@ if __name__ == "__main__":
     def _print_usage_and_exit():
         print("Usage: python fetch_page.py <url> [mode] [--accept-language he]")
         print("Modes: page (default), robots, llms, sitemap, blocks, bots, "
-              "agentready, integrity, full")
+              "agentready, integrity, section, full")
         sys.exit(1)
 
     if len(sys.argv) < 2:
@@ -1604,6 +1970,51 @@ if __name__ == "__main__":
         response = requests.get(target_url, headers=DEFAULT_HEADERS, timeout=30)
         soup = BeautifulSoup(response.text, "lxml")
         data = scan_content_integrity(soup, target_url)
+    elif mode == "section":
+        # "Am I auditing the citable unit?" Classify the URL, and when it
+        # is a navigation surface, name the articles beneath it. The
+        # caller asked about *this* URL, so an article URL is reported as
+        # an article rather than silently redirected to something else.
+        page = fetch_page(target_url, accept_language=accept_language)
+        classification = classify_page_type(page)
+        page_type = classification.get("type")
+        sample = None
+        note = None
+
+        if page_type == "listing":
+            sample = sample_child_articles(page)
+            if classification.get("confidence") == "low":
+                note = (
+                    "Listing classification is low-confidence — this page "
+                    "may be a content page with a link-heavy layout. Treat "
+                    "the sample as provisional and sanity-check the URLs "
+                    "before reporting on them."
+                )
+        elif page_type == "homepage":
+            sample = sample_child_articles(page)
+            note = (
+                "A homepage is mostly a navigation surface, so child "
+                "articles were sampled. Score the homepage itself only for "
+                "entity/brand signals, not for citability."
+            )
+        elif page_type == "article":
+            note = (
+                "This URL is already a citable unit — audit it directly. "
+                "No child sampling needed."
+            )
+        else:
+            note = (
+                "Page is neither an article nor a recognisable listing, so "
+                "no child articles were sampled. Audit it as-is, and treat "
+                "citability findings as applying to this page only."
+            )
+
+        data = {
+            "url": target_url,
+            "classification": classification,
+            "sample": sample,
+            "note": note,
+        }
     elif mode == "full":
         data = {
             "page": fetch_page(target_url, accept_language=accept_language),
