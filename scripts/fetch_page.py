@@ -418,6 +418,199 @@ def extract_freshness(structured_data, soup, headers) -> dict:
     return result
 
 
+# Schema.org @types that mark a page as a standalone content unit — the
+# thing an AI engine actually cites. Everything else (WebSite,
+# CollectionPage, NewsMediaOrganization, ...) describes a wrapper.
+ARTICLE_SCHEMA_TYPES = frozenset(
+    {"article", "newsarticle", "blogposting", "report"}
+)
+
+# First path segment values that mark a navigation surface rather than a
+# content unit. A /tag/politics/ or /writer/37401/ link is how humans
+# browse; it is not the citable article.
+NAVIGATION_PATH_PREFIXES = frozenset(
+    {
+        "about", "archive", "archives", "author", "authors", "cart",
+        "categories", "category", "contact", "faq", "feed", "help",
+        "login", "page", "person", "press", "privacy", "rss", "search",
+        "section", "sections", "tag", "tags", "terms", "topic", "topics",
+        "wp-admin", "wp-content", "wp-json",
+    }
+)
+
+_NUMERIC_ID_SEGMENT = re.compile(r"^\d{4,}$")
+_DATE_PATH = re.compile(r"/(19|20)\d{2}/\d{1,2}(/|$)")
+_HYPHENATED_SLUG = re.compile(r"^[^/]*[a-z0-9]+(-[a-z0-9]+){1,}[^/]*$", re.IGNORECASE)
+
+# Listing thresholds. Both are deliberately loose: this is a routing hint,
+# not a score, and the cost of a false "listing" is one extra sampling
+# pass while the cost of a false "article" is auditing the wrapper.
+LISTING_MIN_H1S = 4          # "> 3" — a content unit has one h1
+LISTING_MIN_ARTICLE_LINKS = 10
+
+
+def _looks_like_article_url(link_url: str, host: str) -> bool:
+    """Heuristic: is this same-host link a content unit or navigation?
+
+    Content-shaped: a numeric ID segment of 4+ digits (/708066/), a date
+    segment (/2026/07/...), or a multi-word hyphenated slug. Navigation:
+    /about/, /tag/politics/, /writer/37401/ and friends.
+    """
+    if not link_url or not isinstance(link_url, str):
+        return False
+    try:
+        parsed = urlparse(link_url)
+    except ValueError:
+        return False
+    if parsed.netloc and host and parsed.netloc.lower() != host.lower():
+        return False
+    path = parsed.path or ""
+    segments = [seg for seg in path.split("/") if seg]
+    if not segments:
+        return False
+    if segments[0].lower() in NAVIGATION_PATH_PREFIXES:
+        return False
+    if any(_NUMERIC_ID_SEGMENT.match(seg) for seg in segments):
+        return True
+    if _DATE_PATH.search(path):
+        return True
+    last = segments[-1]
+    # Strip a trailing file extension before slug-testing (/a-b-c.html).
+    last = re.sub(r"\.(html?|php|aspx?)$", "", last, flags=re.IGNORECASE)
+    if "-" in last and len(last) > 8 and _HYPHENATED_SLUG.match(last):
+        return True
+    return False
+
+
+def _iter_schema_nodes(structured_data):
+    """Yield every dict node in a JSON-LD blob, descending into @graph."""
+    stack = list(structured_data or [])
+    seen = 0
+    while stack and seen < 500:
+        node = stack.pop()
+        seen += 1
+        if isinstance(node, dict):
+            yield node
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
+
+
+def _article_schema_types(structured_data) -> list:
+    """Article-family @type values present in the page's JSON-LD."""
+    found = []
+    for node in _iter_schema_nodes(structured_data):
+        raw = node.get("@type")
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            name = value.rsplit("/", 1)[-1].strip()
+            if name.lower() in ARTICLE_SCHEMA_TYPES and name not in found:
+                found.append(name)
+    return found
+
+
+def classify_page_type(page_data: dict) -> dict:
+    """Decide whether a fetched page is the citable unit or a wrapper.
+
+    Pure function over an existing fetch_page() result — no network. A
+    news section page (zman.co.il/democracy) is a human navigation
+    surface; the units AI engines cite are the articles beneath it.
+    Auditing the wrapper produces recommendations about the wrapper's
+    19 h1s and boilerplate description, none of which govern citation.
+
+    Returns {"type": "article"|"listing"|"homepage"|"other",
+             "confidence": "high"|"medium"|"low",
+             "signals": [human-readable evidence strings]}.
+    The signals are quoted verbatim as Evidence in the report, so they
+    are written for a client reading them, not for a debugger.
+    """
+    page_data = page_data or {}
+    url = page_data.get("url") or ""
+    h1_tags = page_data.get("h1_tags") or []
+    structured_data = page_data.get("structured_data") or []
+    freshness = page_data.get("freshness") or {}
+    internal_links = page_data.get("internal_links") or []
+
+    h1_count = len(h1_tags)
+    tier = freshness.get("tier") or "unknown"
+    freshness_resolved = tier != "unknown"
+
+    try:
+        parsed_url = urlparse(url)
+    except ValueError:
+        parsed_url = None
+    host = parsed_url.netloc if parsed_url else ""
+    path = (parsed_url.path if parsed_url else "") or ""
+
+    # --- homepage: checked first, it outranks every other signal -------
+    if path in ("", "/"):
+        return {
+            "type": "homepage",
+            "confidence": "high",
+            "signals": ["URL is the site root (no path segment)"],
+        }
+
+    # --- gather evidence ----------------------------------------------
+    article_types = _article_schema_types(structured_data)
+
+    article_link_urls = set()
+    for link in internal_links:
+        if isinstance(link, dict):
+            link_url = link.get("url")
+        elif isinstance(link, str):
+            link_url = link
+        else:
+            continue
+        if _looks_like_article_url(link_url, host):
+            article_link_urls.add(link_url)
+    article_link_count = len(article_link_urls)
+
+    signals = []
+
+    # --- article -------------------------------------------------------
+    if article_types:
+        signals.append(f"{'/'.join(article_types)} schema present")
+        if h1_count == 1:
+            signals.append("exactly 1 h1 element")
+        elif h1_count:
+            signals.append(f"{h1_count} h1 elements")
+        else:
+            signals.append("no h1 element")
+        if freshness_resolved:
+            signals.append(f"freshness resolved ({tier})")
+        else:
+            signals.append("freshness unresolved (no machine-readable date)")
+        confidence = "high" if (h1_count == 1 and freshness_resolved) else "medium"
+        return {"type": "article", "confidence": confidence, "signals": signals}
+
+    # --- listing -------------------------------------------------------
+    many_h1s = h1_count > LISTING_MIN_H1S - 1
+    many_article_links = article_link_count >= LISTING_MIN_ARTICLE_LINKS
+    if (many_h1s or many_article_links) and not freshness_resolved:
+        signals.append("no Article-family schema")
+        if many_h1s:
+            signals.append(f"{h1_count} h1 elements")
+        if many_article_links:
+            signals.append(f"{article_link_count} article-shaped internal links")
+        signals.append("freshness unresolved (no machine-readable date)")
+        confidence = "high" if (many_h1s and many_article_links) else "medium"
+        return {"type": "listing", "confidence": confidence, "signals": signals}
+
+    # --- other ---------------------------------------------------------
+    signals.append("no Article-family schema")
+    signals.append(f"{h1_count} h1 element{'' if h1_count == 1 else 's'}")
+    signals.append(f"{article_link_count} article-shaped internal links")
+    if freshness_resolved:
+        signals.append(f"freshness resolved ({tier})")
+    else:
+        signals.append("freshness unresolved (no machine-readable date)")
+    return {"type": "other", "confidence": "low", "signals": signals}
+
+
 def fetch_page(url: str, timeout: int = 30, accept_language: str = None) -> dict:
     """Fetch a page and return structured analysis data.
 
