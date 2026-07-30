@@ -183,19 +183,35 @@ Fields:
 
 | Field | Meaning |
 |---|---|
-| `total_blocks_analyzed` | Block count (≥20 words each) |
-| `average_citability_score` | Page Citability Score (0–100) |
-| `optimal_length_passages` | Blocks in the 134–167 word AI sweet spot |
+| `total_blocks_analyzed` | Count of **content** blocks (≥20 words each, chrome excluded) |
+| `average_citability_score` | Page Citability Score (0–100), over journalism only |
+| `average_citability_score_all_blocks` | The same average with interface chrome left in — for disclosure, never the headline |
+| `chrome_elements_removed` | Share/subscribe/support widgets stripped at the DOM level |
+| `chrome_blocks_excluded` | Blocks that were still chrome after DOM stripping |
+| `optimal_length_passages` | Blocks in the AI sweet spot (Hebrew 90–120 words, English 134–167) |
 | `grade_distribution` | `{A, B, C, D, F}` counts |
-| `top_5_citable[]` | Strongest blocks — each has `heading`, `content`, `word_count`, `total_score`, `breakdown` (per-dimension), `grade` |
+| `top_5_citable[]` | Strongest blocks — each has `heading`, `content`, `word_count`, `total_score`, `breakdown` (per-dimension), `grade`, `is_chrome` |
 | `bottom_5_citable[]` | Weakest blocks — same shape, these are your rewrite targets |
-| `all_blocks[]` | Every scored block |
+| `all_blocks[]` | Every scored block, chrome included and labelled via `is_chrome` |
 | `fetch_method` | `"default"` (ordinary browser UA) or `"bot_ua_fallback"` (retried as an AI crawler after a WAF challenge) |
 | `challenge_detected` | `true` when the first request hit a WAF/JS challenge |
 
 **Disclose the fetch method.** The scorer returns `fetch_method` and `challenge_detected`. When `fetch_method == "bot_ua_fallback"`, the site's WAF challenged an ordinary browser request and scores were computed from the content an **AI crawler** receives. State this in the report methodology — for a GEO audit that is arguably the more relevant view, but the reader must know which view was measured.
 
+**Interface chrome is not journalism.** Share bars, comment-system explainers and reader-support pitches sit *inside* the article element on most publisher templates, so their text lands in the scored body. They are stripped at the DOM level before blocks are built. Report `average_citability_score` as the score; mention `average_citability_score_all_blocks` only when explaining a change against a previous audit, since the two numbers can differ by ~10 points on a publisher template.
+
 Read `top_5_citable` into the "Strongest Content Blocks" output section and `bottom_5_citable` into "Weakest Content Blocks (Rewrite Priority)". `average_citability_score` becomes the Page Citability Score in the summary.
+
+### Scoring several articles as one unit
+
+When the audit sampled child articles (see `geo-audit` Step 0b), also run the cross-article boilerplate check before drawing conclusions:
+
+```python
+from citability_scorer import detect_cross_article_boilerplate
+boilerplate = detect_cross_article_boilerplate(blocks_per_article)
+```
+
+It returns passages appearing on ≥60% of the sampled articles. A standing editor's note or membership pitch appears *once per article*, so it is never an intra-page duplicate and the per-page `boilerplate_ratio` cannot see it — only the sample can. Anything it returns is site furniture: exclude it from scoring and do not write findings about it. Unlike the DOM class-name heuristics, this generalises to templates whose markup we have never seen.
 
 ### Step 2: Generate rewrite suggestions for weakest blocks
 

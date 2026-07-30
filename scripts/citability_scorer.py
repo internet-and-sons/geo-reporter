@@ -20,6 +20,7 @@ import sys
 import os
 import json
 import re
+import math
 import difflib
 from collections import Counter
 from typing import Optional
@@ -613,6 +614,71 @@ def _is_chrome_block(text: str) -> bool:
     if len(hits) >= 2:
         return True
     return bool(hits) and len(text.split()) <= 12
+
+
+def detect_cross_article_boilerplate(article_blocks: list,
+                                     min_share: float = 0.6) -> set:
+    """Passages that recur across sampled articles, and so aren't journalism.
+
+    ``article_blocks`` is one list of ``{"heading", "content"}`` blocks
+    per article — exactly the shape v0.4.4's child-article sampling
+    produces.
+
+    A standing editor's note or membership pitch appears *once* per
+    article, so it is never an intra-page duplicate and
+    ``boilerplate_ratio`` cannot see it. Across the sample it is
+    unmistakable. This complements the class-name heuristics in
+    _CHROME_SELECTOR, which are brittle across sites in a way that
+    "identical text on every article" is not.
+
+    Returns the set of offending block texts (as written on the first
+    article that carried them).
+
+    Requires at least two articles: with one sample nothing can be shown
+    to recur, and treating its blocks as boilerplate would empty the only
+    article available.
+    """
+    if len(article_blocks) < 2:
+        return set()
+
+    # Count each passage once per article, so a repetitive single page
+    # cannot define boilerplate for the whole sample.
+    seen_per_article = []
+    for blocks in article_blocks:
+        normalised = {}
+        for block in blocks:
+            text = block.get("content", "")
+            key = re.sub(r"\s+", " ", text.strip().lower())
+            if key:
+                normalised.setdefault(key, text)
+        seen_per_article.append(normalised)
+
+    threshold = max(2, math.ceil(min_share * len(article_blocks)))
+    boilerplate = set()
+    considered = []
+
+    for index, normalised in enumerate(seen_per_article):
+        for key, original in normalised.items():
+            if any(_texts_match(key, prior) for prior in considered):
+                continue
+            considered.append(key)
+            hits = sum(
+                1 for other in seen_per_article[index:]
+                if any(_texts_match(key, k) for k in other)
+            )
+            if hits >= threshold:
+                boilerplate.add(original)
+
+    return boilerplate
+
+
+def _texts_match(a: str, b: str) -> bool:
+    """Exact match, or near-identical — publishers vary a word or a date."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) / max(len(a), len(b), 1) > 0.2:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.9
 
 
 def _compute_negative_signals(blocks: list, structured_data=None) -> dict:
