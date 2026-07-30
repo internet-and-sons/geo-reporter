@@ -31,7 +31,9 @@ SCANNED = (
     "evals/report-contract-scenarios.md",
     ".claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json",
+    "uninstall.sh",
     "skills/geo/SKILL.md",
+    "skills/geo/REPORT-CONTRACT.md",
     "skills/geo-audit/SKILL.md",
     "skills/geo-compare/SKILL.md",
     "skills/geo-prospect/SKILL.md",
@@ -87,6 +89,11 @@ class TestNoDanglingReferences:
             if content is None:
                 continue
             for line_no, line in enumerate(content.splitlines(), 1):
+                # The install scripts' prune list must name the retired
+                # skills in order to delete them — that is the one place
+                # naming the surface is the fix, not a dangling reference.
+                if "RETIRED_SKILLS" in line:
+                    continue
                 for pattern in FORBIDDEN:
                     if pattern.search(line):
                         offenders.append(f"{rel}:{line_no}: {line.strip()}")

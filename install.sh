@@ -147,6 +147,20 @@ main() {
         SOURCE_DIR="${TEMP_DIR}/repo"
     fi
 
+    # ---- Prune skills retired from GEO Reporter ----
+    # The copy loop below is additive, so a skill removed from the repo
+    # would otherwise survive forever in ~/.claude/skills — advertising
+    # a command whose backing script no longer exists. Only names that
+    # were ours are pruned; user-only skills (e.g. geo-observe) are
+    # never touched.
+    RETIRED_SKILLS="geo-report-pdf geo-proposal"
+    for retired in $RETIRED_SKILLS; do
+        if [ -d "${SKILLS_DIR}/${retired}" ]; then
+            rm -rf "${SKILLS_DIR:?}/${retired}"
+            print_info "  removed retired skill: ${retired}"
+        fi
+    done
+
     # ---- Install Skills ----
     print_info "Installing sub-skills..."
 
