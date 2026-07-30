@@ -474,7 +474,13 @@ class TestVerdictLogic:
         assert result["verdict"] == "OPEN"
         assert result["overall_score"] == 100
         for cls in BOT_CLASSES:
-            assert result["class_scores"][cls]["score"] == 100
+            score = result["class_scores"][cls]["score"]
+            # traditional-search is Googlebot + Bingbot, both verified by
+            # network address and therefore never testable off-network.
+            if cls == "traditional-search":
+                assert score is None
+            else:
+                assert score == 100
 
     def test_healthy_publisher_when_only_training_blocked(self):
         # NYT/WSJ/Reuters/BBC pattern: training blocked, retrieval open.
@@ -483,17 +489,19 @@ class TestVerdictLogic:
         assert result["verdict"] == "HEALTHY_PUBLISHER"
         assert result["class_scores"]["live-retrieval"]["score"] == 100
         assert result["class_scores"]["search-index"]["score"] == 100
-        assert result["class_scores"]["traditional-search"]["score"] == 100
+        # Untestable, so it cannot veto the healthy verdict.
+        assert result["class_scores"]["traditional-search"]["score"] is None
         assert result["class_scores"]["training"]["score"] == 0
 
     def test_blocked_when_retrieval_and_search_blocked(self):
         result = self._probe_with_class_blocks(
             {"live-retrieval", "search-index", "traditional-search"}
         )
-        # Retrieval and traditional are 0; training is 100.
-        # overall = 0.5*0 + 0.35*0 + 0.15*100 = 15
+        # Retrieval is 0; training is 100; traditional is untestable, so
+        # its 0.35 weight is redistributed rather than scored as zero.
+        # overall = (0.5*0 + 0.15*100) / 0.65 = 23
         assert result["verdict"] == "BLOCKED"
-        assert result["overall_score"] == 15
+        assert result["overall_score"] == 23
 
     def test_partially_blocked_when_some_search_blocked(self):
         # Block 1 of 3 search-index bots — score = 67.

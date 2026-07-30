@@ -131,11 +131,13 @@ AI_CRAWLERS = {
         "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent) Chrome/138.0.0.0 Safari/537.36",
         "class": "live-retrieval",
         "operator": "Google",
+        "address_verified": True,
     },
     "Google-CloudVertexBot": {
         "ua": "Mozilla/5.0 (compatible; Google-CloudVertexBot/1.0; +http://www.google.com/bot.html)",
         "class": "training",
         "operator": "Google",
+        "address_verified": True,
     },
     # Google-NotebookLM is the LEGACY token for the Gemini Notebook
     # fetcher. Google renamed it to Google-GeminiNotebook and supports
@@ -145,11 +147,13 @@ AI_CRAWLERS = {
         "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-NotebookLM; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
         "class": "live-retrieval",
         "operator": "Google",
+        "address_verified": True,
     },
     "Google-GeminiNotebook": {
         "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 (compatible; Google-GeminiNotebook; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook)",
         "class": "live-retrieval",
         "operator": "Google",
+        "address_verified": True,
     },
     # Amazon
     "Amazonbot": {
@@ -180,11 +184,13 @@ AI_CRAWLERS = {
         "ua": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
         "class": "traditional-search",
         "operator": "Google",
+        "address_verified": True,
     },
     "BingBot": {
         "ua": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
         "class": "traditional-search",
         "operator": "Microsoft",
+        "address_verified": True,
     },
     # Training-only crawlers. Often deliberately blocked by publishers
     # — that posture is GEO-healthy and the report should not penalise it.
@@ -251,6 +257,29 @@ def active_crawlers() -> dict:
         name: info
         for name, info in AI_CRAWLERS.items()
         if info.get("status", "active") == "active"
+    }
+
+
+def address_verified_crawlers() -> dict:
+    """Crawlers whose operator verifies them by network address.
+
+    Google and Microsoft authenticate their crawlers by reverse DNS /
+    published IP ranges, not by user-agent string. A request carrying
+    their UA from anyone else's network is *supposed* to be refused, so
+    the 403 we get back is correct anti-impersonation behaviour and says
+    nothing about how the real crawler is treated.
+
+    These are still probed (the result is reported for transparency) but
+    they are excluded from scoring: counting an expected refusal as a
+    block turns a healthy publisher into "MOSTLY_BLOCKED", and a
+    Googlebot false alarm reads to a site owner as "we're falling out of
+    Google". Confirm real access via Google Search Console / Bing
+    Webmaster Tools instead.
+    """
+    return {
+        name: info
+        for name, info in AI_CRAWLERS.items()
+        if info.get("address_verified")
     }
 
 # Back-compat alias for callers and tests that still reference the
@@ -1467,55 +1496,128 @@ def probe_ai_crawlers(url: str, timeout: int = 15) -> dict:
         result["probes"].append(probe)
 
     # --- 5. Per-class scoring + overall verdict -----------------------------
-    # Scoring is multi-dimensional rather than a single number because the
-    # GEO impact of blocking differs sharply by bot class. A site that
-    # blocks training but allows retrieval is the canonical healthy
-    # publisher posture (NYT, WSJ, Reuters, BBC) — one flat score would
-    # mislabel it. We emit a sub-score per class and an overall verdict
-    # that weights retrieval reachability heaviest.
-    by_class = {cls: {"total": 0, "blocked": 0, "score": 100}
-                for cls in BOT_CLASSES}
-    for probe in result["probes"]:
-        cls = probe["class"]
-        by_class[cls]["total"] += 1
+    result.update(score_probe_results(
+        result["probes"],
+        js_challenge_unresolved=(
+            result["js_challenge_detected"]
+            and not result["baseline"]["used_playwright"]
+        ),
+    ))
+
+    return result
+
+
+def score_probe_results(probes: list, js_challenge_unresolved: bool = False) -> dict:
+    """Turn raw probe results into per-class scores, a verdict and a score.
+
+    Scoring is multi-dimensional rather than a single number because the
+    GEO impact of blocking differs sharply by bot class. A site that
+    blocks training but allows retrieval is the canonical healthy
+    publisher posture (NYT, WSJ, Reuters, BBC) — one flat score would
+    mislabel it.
+
+    Address-verified crawlers (see address_verified_crawlers) are
+    reported but excluded from every count here. Their 403 is the
+    expected anti-impersonation response to an off-network request, so
+    counting it as a block would fabricate evidence of a problem. A class
+    left with nothing testable scores ``None`` — not 0, which would
+    assert "blocked" on no evidence — and its weight is redistributed
+    across the classes we could actually measure.
+    """
+    verified = set(address_verified_crawlers())
+
+    by_class = {
+        cls: {
+            "total": 0,
+            "testable": 0,
+            "blocked": 0,
+            "excluded_address_verified": 0,
+            "score": None,
+        }
+        for cls in BOT_CLASSES
+    }
+    for probe in probes:
+        stats = by_class[probe["class"]]
+        stats["total"] += 1
+        if probe["bot"] in verified:
+            stats["excluded_address_verified"] += 1
+            continue
+        stats["testable"] += 1
         if probe["blocked"]:
-            by_class[cls]["blocked"] += 1
+            stats["blocked"] += 1
+
     # Each class drops linearly from 100 to 0 as the share of blocked
     # bots in that class goes from 0% to 100%.
     for stats in by_class.values():
-        if stats["total"]:
+        if stats["testable"]:
             stats["score"] = max(
-                0, round(100 * (1 - stats["blocked"] / stats["total"]))
+                0, round(100 * (1 - stats["blocked"] / stats["testable"]))
             )
 
     # JS-challenge penalty applies to the search-index and live-retrieval
     # classes since non-browser bots can't bypass an interstitial.
-    if result["js_challenge_detected"] and not result["baseline"]["used_playwright"]:
+    if js_challenge_unresolved:
         for cls in ("search-index", "live-retrieval"):
-            by_class[cls]["score"] = max(0, by_class[cls]["score"] - 30)
+            if by_class[cls]["score"] is not None:
+                by_class[cls]["score"] = max(0, by_class[cls]["score"] - 30)
 
-    result["class_scores"] = by_class
+    result = {"class_scores": by_class}
+    result["untestable_classes"] = [
+        cls for cls in BOT_CLASSES if by_class[cls]["score"] is None
+    ]
 
-    retrieval = (by_class["live-retrieval"]["score"] + by_class["search-index"]["score"]) // 2
+    live = by_class["live-retrieval"]["score"]
+    search = by_class["search-index"]["score"]
+    measured = [s for s in (live, search) if s is not None]
+    retrieval = sum(measured) // len(measured) if measured else None
     traditional = by_class["traditional-search"]["score"]
     training = by_class["training"]["score"]
 
     # Verdict logic. Retrieval is the headline signal; training is
     # informational. "HEALTHY_PUBLISHER" recognises the NYT/Reuters
     # pattern explicitly so reports don't mislabel it as a problem.
-    if retrieval >= 90 and traditional >= 90:
-        verdict = "OPEN" if training >= 70 else "HEALTHY_PUBLISHER"
-    elif retrieval >= 70 and traditional >= 70:
+    #
+    # An untestable class (score None) is absence of evidence, so it
+    # neither satisfies nor fails a gate — the gate is decided on what we
+    # measured. Off-network, traditional-search is always untestable,
+    # which is why it must not be able to veto HEALTHY_PUBLISHER.
+    def meets(value, threshold):
+        """True when measured at or above threshold, or not measured."""
+        return value is None or value >= threshold
+
+    def measured_at_least(value, threshold):
+        """True only on positive evidence — None never satisfies this."""
+        return value is not None and value >= threshold
+
+    if retrieval is None:
+        verdict = "INCONCLUSIVE"
+    elif meets(retrieval, 90) and meets(traditional, 90):
+        verdict = "OPEN" if meets(training, 70) else "HEALTHY_PUBLISHER"
+    elif meets(retrieval, 70) and meets(traditional, 70):
         verdict = "PARTIALLY_BLOCKED"
-    elif retrieval >= 40 or traditional >= 40:
+    elif (measured_at_least(retrieval, 40)
+          or measured_at_least(traditional, 40)):
         verdict = "MOSTLY_BLOCKED"
     else:
         verdict = "BLOCKED"
 
     result["verdict"] = verdict
-    result["overall_score"] = round(
-        0.5 * retrieval + 0.35 * traditional + 0.15 * training
-    )
+
+    # Weights are renormalised over the classes we could measure, so an
+    # untestable class dilutes nobody rather than scoring zero.
+    weighted = [
+        (retrieval, 0.5),
+        (traditional, 0.35),
+        (training, 0.15),
+    ]
+    live_weight = sum(w for score, w in weighted if score is not None)
+    if live_weight:
+        result["overall_score"] = round(
+            sum(score * w for score, w in weighted if score is not None)
+            / live_weight
+        )
+    else:
+        result["overall_score"] = None
 
     return result
 
