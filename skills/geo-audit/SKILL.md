@@ -178,6 +178,7 @@ Content-level scoring (citability, E-E-A-T, schema, platform readiness) runs on 
 - Verify "About" page quality and team credentials
 - Run the content-integrity scan (`fetch_page.py <url> integrity`) and surface any signals via the geo-integrity skill's framing (signal-not-verdict, max Confidence Likely)
 - Surface the citability scorer's `negative_signals` (keyword stuffing, CTA-in-body, boilerplate, missing author) as informational findings — they do NOT change the score
+- When Step 0b sampled child articles, run `detect_cross_article_boilerplate()` across them and exclude anything it returns before scoring. A passage on every sampled article is site furniture — a membership pitch, a standing editor's note — and writing a finding about it wastes the reader's attention on the template's chrome instead of its journalism.
 
 **Subagent 5: Schema & Structured Data (geo-schema)**
 - Validate all schema.org markup

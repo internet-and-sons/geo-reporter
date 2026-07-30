@@ -94,11 +94,12 @@ The output is a single JSON object with this shape:
   ],
   "payment_required_bots": ["ClaudeBot"],
   "class_scores": {
-    "live-retrieval":     {"total": 7, "blocked": 0, "score": 100},
-    "search-index":       {"total": 5, "blocked": 5, "score": 0},
-    "traditional-search": {"total": 2, "blocked": 0, "score": 100},
-    "training":           {"total": 7, "blocked": 7, "score": 0}
+    "live-retrieval":     {"total": 7, "testable": 4, "blocked": 0, "excluded_address_verified": 3, "score": 100},
+    "search-index":       {"total": 6, "testable": 6, "blocked": 6, "excluded_address_verified": 0, "score": 0},
+    "traditional-search": {"total": 2, "testable": 0, "blocked": 0, "excluded_address_verified": 2, "score": null},
+    "training":           {"total": 7, "testable": 6, "blocked": 6, "excluded_address_verified": 1, "score": 0}
   },
+  "untestable_classes": ["traditional-search"],
   "verdict": "MOSTLY_BLOCKED",
   "overall_score": 60,
   "errors": [],
@@ -153,6 +154,18 @@ Verdict mapping (from `class_scores.live-retrieval`, `search-index`, `traditiona
 | `PARTIALLY_BLOCKED` | Some retrieval/search bots blocked | retrieval ≥ 70 AND traditional ≥ 70 |
 | `MOSTLY_BLOCKED` | Major retrieval or search loss | retrieval ≥ 40 OR traditional ≥ 40 |
 | `BLOCKED` | Site invisible to AI search | everything below 40 |
+| `INCONCLUSIVE` | Nothing in the retrieval classes was testable | retrieval score is `null` |
+
+### Address-verified crawlers are excluded from scoring (mandatory)
+
+Google and Microsoft authenticate their crawlers by **network address**, not by user-agent. Our probe runs from neither network, so `GoogleBot`, `BingBot`, `Google-Agent`, `Google-NotebookLM`, `Google-GeminiNotebook` and `Google-CloudVertexBot` are *supposed* to answer 403. That refusal is correct anti-impersonation behaviour and is **not evidence of a block**.
+
+These six are still probed and still appear in `probes[]`, but the scorer excludes them: each class reports `testable` (what actually counted) alongside `total` and `excluded_address_verified`.
+
+- Render them as **`— Not tested (validated by network address)`**. Never `❌ Blocked`. A Googlebot false alarm reads to a site owner as "we're falling out of Google".
+- A class whose members are *all* address-verified has **`score: null`**, and its name appears in `untestable_classes`. Off-network this is the normal state of `traditional-search`. Render it as *not measured*, never as `0/100` — scoring it zero asserts "blocked" on no evidence.
+- `overall_score` renormalises its weights over the classes that were measurable, so an untestable class dilutes nobody.
+- To confirm real Google/Bing access, point the user at **Google Search Console URL Inspection** and **Bing Webmaster Tools** — that is the only place this can be checked.
 
 **`HEALTHY_PUBLISHER` is the canonical NYT/WSJ/Reuters/BBC posture and is a *good* result for GEO.** Do not recommend unblocking training bots when this verdict fires — it's intentional and well-supported by 2025 publisher-log analyses (Botify, Cloudflare, TollBit). Mention the posture is healthy and move on to any actual mismatches.
 

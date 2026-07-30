@@ -83,3 +83,22 @@ Command: `/geo agentready <a Cloudflare-fronted site>` and `/geo brands <a site 
 - [ ] brands: only genuinely-failing links (404/410/DNS) appear as broken-link findings
 - [ ] brands: links the platform refused to answer appear as a note, not a finding — a live Wikidata or Facebook link is never reported as broken
 - [ ] citability: when `fetch_method` is `bot_ua_fallback`, the methodology says scores reflect the AI-crawler view
+
+## Scenario 10 — An expected refusal is not a block
+
+Command: `/geo crawlers <any site>` and `/geo audit <a healthy publisher: blocks training, allows retrieval>`
+- [ ] Googlebot, Bingbot and the `Google-*` agents render as `— Not tested (validated by network address)` — never `❌ Blocked`
+- [ ] `traditional-search` reports as **not measured**, never as `0/100`, when every member is address-verified
+- [ ] The composite crawler score does not fall because of an off-network 403 from Google or Bing
+- [ ] A site that blocks CCBot/Bytespider/Meta/cohere while serving every retrieval and search crawler reads as `HEALTHY_PUBLISHER`, not `MOSTLY_BLOCKED`
+- [ ] The report points the reader at Google Search Console / Bing Webmaster Tools as the only way to confirm real Google/Bing access
+- [ ] Genuine retrieval blocks still score badly — the exclusion never whitewashes a real problem
+
+## Scenario 11 — The scorer speaks Hebrew
+
+Command: `/geo citability <a Hebrew article on a publisher template>`
+- [ ] `missing_author` is NOT flagged on an article carrying a visible Hebrew byline or a `Person` node in its JSON-LD
+- [ ] Share bars, comment-system explainers and reader-support pitches do not appear among the scored passages
+- [ ] The reported score is the content-only average; the all-blocks figure appears only when explaining a change vs a previous audit
+- [ ] Optimal-length counts use the Hebrew band (90–120 words), not the English one
+- [ ] Ordinary Hebrew prose that happens to contain a word like "שיתוף" (cooperation) is not classified as chrome

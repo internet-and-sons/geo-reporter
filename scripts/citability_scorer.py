@@ -20,6 +20,7 @@ import sys
 import os
 import json
 import re
+import math
 import difflib
 from collections import Counter
 from typing import Optional
@@ -486,20 +487,201 @@ _NEG_STOPWORDS = frozenset({
 })
 
 # Vocabulary that marks CTA / navigation / share chrome rather than prose.
+# Hebrew is first-class here: most sites this tool audits are Hebrew or
+# Hebrew+English, and an English-only list cannot fire on them at all.
 _CHROME_TERMS = (
+    # English
     "share", "subscribe", "sign up", "log in", "copy link", "print",
-    "follow us", "newsletter", "cookie",
+    "follow us", "newsletter", "cookie", "donate", "support us",
+    # Hebrew — share / navigation chrome
+    "שיתוף", "העתק קישור", "הדפס", "הרשמה", "הירשם", "עקבו",
+    "ניוזלטר", "עוגיות", "התחבר",
+    # Hebrew — reader-support appeals, which read as prose but are CTAs
+    "זקוקים לתמיכה", "עזרו לנו", "תרומה", "הצטרפו", "מנוי",
 )
 
-# Byline / author signals searched over the page body text.
+# Byline / author signals searched over the page body text. The
+# structured-data author node is checked first and is far more reliable;
+# these are the fallback for pages without JSON-LD.
 _BYLINE_PATTERNS = (
     re.compile(r"\b[Bb]y [A-Z][a-z]+"),
     re.compile(r"written by", re.IGNORECASE),
     re.compile(r"author:", re.IGNORECASE),
+    # Hebrew: "מאת" (by), "כתב/כתבת" (reporter), "מערכת" (editorial desk)
+    re.compile(r"מאת\s+\S+"),
+    re.compile(r"כתב(?:ת)?\s*:\s*\S+"),
+    re.compile(r"מערכת\s+\S+"),
 )
 
 
-def _compute_negative_signals(blocks: list) -> dict:
+def _structured_data_has_author(structured_data) -> bool:
+    """True when a JSON-LD node declares a named author.
+
+    This is the strongest byline signal available — stronger than any
+    text heuristic — and it is language-independent, which is the whole
+    point: a Hebrew article with a Person node should never be reported
+    as missing its byline.
+    """
+    def named(value) -> bool:
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, dict):
+            return bool(str(value.get("name", "")).strip())
+        if isinstance(value, list):
+            return any(named(v) for v in value)
+        return False
+
+    def walk(node) -> bool:
+        if isinstance(node, dict):
+            if "author" in node and named(node["author"]):
+                return True
+            return any(walk(v) for v in node.values())
+        if isinstance(node, list):
+            return any(walk(v) for v in node)
+        return False
+
+    return walk(structured_data or [])
+
+
+# Class/id fragments that mark a share, subscribe or reader-support
+# widget. Stripped at the DOM level, which is the only place this can be
+# done safely: these widgets sit *inside* the article element, so by the
+# time their text is concatenated into a block it is inseparable from the
+# prose around it. On zman.co.il the share bar is <ul class="social">
+# directly above the headline, and leaving it in glued 59 words of
+# button labels onto the front of the article body.
+_CHROME_SELECTOR = re.compile(
+    # Widgets
+    r"(share|sharing|social|subscribe|newsletter|donat|support-us|"
+    r"follow-us|print-|-print|promo"
+    # Containers that are never article prose: modals, overlays, consent
+    # banners and the sticky reader-support bars publishers run. On
+    # zman.co.il these carried a comment-system explainer and a 73-word
+    # membership pitch straight into the scored text.
+    r"|popup|modal|overlay|lightbox|banner|cookie|bottom-bar|toolbar)",
+    re.IGNORECASE,
+)
+
+
+# Never removed no matter what their class says. Publishers put state
+# classes on structural elements — zman.co.il ships <body
+# class="hide-bottom-bar-join">, which matched the widget pattern and
+# decomposed the entire page, leaving zero content blocks to score.
+_STRUCTURAL_TAGS = frozenset({"html", "body", "main", "article"})
+
+# A chrome widget is small relative to the page. Anything holding more
+# than this share of the text is the article, whatever it calls itself.
+_CHROME_MAX_TEXT_SHARE = 0.4
+
+
+def _strip_chrome_elements(soup) -> int:
+    """Remove share/subscribe/support widgets. Returns how many went."""
+    page_length = len(soup.get_text(strip=True)) or 1
+    removed = 0
+    for attr in ("class", "id"):
+        for element in soup.find_all(attrs={attr: _CHROME_SELECTOR}):
+            if element.name in _STRUCTURAL_TAGS:
+                continue
+            # decompose() on a parent orphans its matched children, so
+            # re-check that this node is still attached before measuring.
+            if element.decomposed:
+                continue
+            share = len(element.get_text(strip=True)) / page_length
+            if share > _CHROME_MAX_TEXT_SHARE:
+                continue
+            element.decompose()
+            removed += 1
+    return removed
+
+
+def _is_chrome_block(text: str) -> bool:
+    """True when a block is interface furniture rather than journalism.
+
+    Two ways to qualify, because chrome comes in two shapes:
+
+    - **Several distinct chrome terms.** A share widget stacks them
+      ("העתק קישור · שיתוף במייל · שיתוף בפייסבוק"), and no ordinary
+      paragraph does. Length-independent, which matters: the widget that
+      exposed this bug was 59 words, sailing past the old 40-word gate.
+    - **One term in a very short block.** Catches a bare "Subscribe" or
+      "הרשמה". Capped at 12 words rather than the 40 this originally
+      used: a 37-word paragraph mentioning "שיתוף הפעולה" (cooperation,
+      an everyday phrase in political writing) is prose, not chrome, and
+      the looser gate condemned it.
+    """
+    lowered = text.lower()
+    hits = {term for term in _CHROME_TERMS if term in lowered}
+    if len(hits) >= 2:
+        return True
+    return bool(hits) and len(text.split()) <= 12
+
+
+def detect_cross_article_boilerplate(article_blocks: list,
+                                     min_share: float = 0.6) -> set:
+    """Passages that recur across sampled articles, and so aren't journalism.
+
+    ``article_blocks`` is one list of ``{"heading", "content"}`` blocks
+    per article — exactly the shape v0.4.4's child-article sampling
+    produces.
+
+    A standing editor's note or membership pitch appears *once* per
+    article, so it is never an intra-page duplicate and
+    ``boilerplate_ratio`` cannot see it. Across the sample it is
+    unmistakable. This complements the class-name heuristics in
+    _CHROME_SELECTOR, which are brittle across sites in a way that
+    "identical text on every article" is not.
+
+    Returns the set of offending block texts (as written on the first
+    article that carried them).
+
+    Requires at least two articles: with one sample nothing can be shown
+    to recur, and treating its blocks as boilerplate would empty the only
+    article available.
+    """
+    if len(article_blocks) < 2:
+        return set()
+
+    # Count each passage once per article, so a repetitive single page
+    # cannot define boilerplate for the whole sample.
+    seen_per_article = []
+    for blocks in article_blocks:
+        normalised = {}
+        for block in blocks:
+            text = block.get("content", "")
+            key = re.sub(r"\s+", " ", text.strip().lower())
+            if key:
+                normalised.setdefault(key, text)
+        seen_per_article.append(normalised)
+
+    threshold = max(2, math.ceil(min_share * len(article_blocks)))
+    boilerplate = set()
+    considered = []
+
+    for index, normalised in enumerate(seen_per_article):
+        for key, original in normalised.items():
+            if any(_texts_match(key, prior) for prior in considered):
+                continue
+            considered.append(key)
+            hits = sum(
+                1 for other in seen_per_article[index:]
+                if any(_texts_match(key, k) for k in other)
+            )
+            if hits >= threshold:
+                boilerplate.add(original)
+
+    return boilerplate
+
+
+def _texts_match(a: str, b: str) -> bool:
+    """Exact match, or near-identical — publishers vary a word or a date."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) / max(len(a), len(b), 1) > 0.2:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.9
+
+
+def _compute_negative_signals(blocks: list, structured_data=None) -> dict:
     """Informational-only page-level negative signals.
 
     Computed purely from already-fetched content blocks (no new network
@@ -539,12 +721,7 @@ def _compute_negative_signals(blocks: list) -> dict:
     }
 
     # --- cta_chrome_ratio: share of short chrome/nav/share blocks ------------
-    chrome_blocks = 0
-    for text in contents:
-        wc = len(text.split())
-        lowered = text.lower()
-        if wc <= 40 and any(term in lowered for term in _CHROME_TERMS):
-            chrome_blocks += 1
+    chrome_blocks = sum(1 for text in contents if _is_chrome_block(text))
     cta_value = round(chrome_blocks / total, 4)
     cta_chrome_ratio = {
         "value": cta_value,
@@ -576,8 +753,11 @@ def _compute_negative_signals(blocks: list) -> dict:
                  "lower the density of unique, citable content."),
     }
 
-    # --- missing_author: no byline signal anywhere in the body --------------
-    has_byline = any(p.search(body) for p in _BYLINE_PATTERNS)
+    # --- missing_author: no byline in the structured data or the body -------
+    has_byline = (
+        _structured_data_has_author(structured_data)
+        or any(p.search(body) for p in _BYLINE_PATTERNS)
+    )
     missing_author = {
         "value": not has_byline,
         "flagged": not has_byline,
@@ -646,8 +826,22 @@ def analyze_page_citability(url: str) -> dict:
         return {"error": f"Failed to fetch page: {str(e)}"}
 
     soup = BeautifulSoup(response.text, "lxml")
+
+    # Harvest JSON-LD before the <script> strip below destroys it. The
+    # author node is the strongest byline signal available and, unlike
+    # any text pattern, it is language-independent — which is what stops
+    # missing_author firing on every Hebrew article.
+    structured_data = []
+    for tag in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        try:
+            parsed = json.loads(tag.string or "")
+        except (ValueError, TypeError):
+            continue
+        structured_data.extend(parsed if isinstance(parsed, list) else [parsed])
+
     for element in soup.find_all(["script", "style", "nav", "footer", "header", "aside", "form"]):
         element.decompose()
+    chrome_elements_removed = _strip_chrome_elements(soup)
 
     blocks = []
     current_heading = "Introduction"
@@ -669,27 +863,41 @@ def analyze_page_citability(url: str) -> dict:
         if len(combined.split()) >= 20:
             blocks.append({"heading": current_heading, "content": combined})
 
-    scored_blocks = [score_passage(b["content"], b["heading"]) for b in blocks]
+    scored_blocks = []
+    for block in blocks:
+        scored = score_passage(block["content"], block["heading"])
+        # Interface furniture is measured, labelled and then kept out of
+        # the average. A share widget and a reader-support appeal are not
+        # journalism, and scoring them as if they were understates the
+        # writing: on the zman.co.il sample this was worth 8 points on
+        # the heaviest-weighted category in the whole audit.
+        scored["is_chrome"] = _is_chrome_block(block["content"])
+        scored_blocks.append(scored)
 
-    if scored_blocks:
-        avg_score = sum(b["total_score"] for b in scored_blocks) / len(scored_blocks)
-        top_blocks = sorted(scored_blocks, key=lambda x: x["total_score"], reverse=True)[:5]
-        bottom_blocks = sorted(scored_blocks, key=lambda x: x["total_score"])[:5]
-        # Optimal length depends on the dominant language of the block.
-        optimal_count = sum(
-            1 for b in scored_blocks
-            if (90 <= b["word_count"] <= 120 if b.get("language") == "he"
-                else 134 <= b["word_count"] <= 167)
-        )
-    else:
-        avg_score, top_blocks, bottom_blocks, optimal_count = 0, [], [], 0
+    content_blocks = [b for b in scored_blocks if not b["is_chrome"]]
+
+    def _mean(items):
+        return round(
+            sum(b["total_score"] for b in items) / len(items), 1
+        ) if items else 0
+
+    # Ranking, grades and the optimal-length count all describe the
+    # writing, so they run over content blocks only.
+    top_blocks = sorted(
+        content_blocks, key=lambda x: x["total_score"], reverse=True)[:5]
+    bottom_blocks = sorted(content_blocks, key=lambda x: x["total_score"])[:5]
+    optimal_count = sum(
+        1 for b in content_blocks
+        if (90 <= b["word_count"] <= 120 if b.get("language") == "he"
+            else 134 <= b["word_count"] <= 167)
+    )
 
     grade_dist = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
-    for block in scored_blocks:
+    for block in content_blocks:
         grade_dist[block["grade"]] += 1
 
     lang_dist = {"he": 0, "en": 0}
-    for block in scored_blocks:
+    for block in content_blocks:
         lang_dist[block.get("language", "en")] += 1
 
     return {
@@ -699,14 +907,21 @@ def analyze_page_citability(url: str) -> dict:
         "fetch_method": fetch_method,
         "challenge_detected": challenge_detected,
         "language_distribution": lang_dist,
-        "total_blocks_analyzed": len(scored_blocks),
-        "average_citability_score": round(avg_score, 1),
+        "total_blocks_analyzed": len(content_blocks),
+        # The headline number, over journalism only.
+        "average_citability_score": _mean(content_blocks),
+        # Kept so a report can show its work rather than quietly
+        # publishing a different number than a previous audit did.
+        "average_citability_score_all_blocks": _mean(scored_blocks),
+        "chrome_blocks_excluded": len(scored_blocks) - len(content_blocks),
+        "chrome_elements_removed": chrome_elements_removed,
         "optimal_length_passages": optimal_count,
         "grade_distribution": grade_dist,
         "top_5_citable": top_blocks,
         "bottom_5_citable": bottom_blocks,
         "all_blocks": scored_blocks,
-        "negative_signals": _compute_negative_signals(blocks),
+        "negative_signals": _compute_negative_signals(
+            blocks, structured_data=structured_data),
     }
 
 
