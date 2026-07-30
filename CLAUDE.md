@@ -6,20 +6,19 @@ This file is read automatically by Claude Code when working in this repo. It cap
 
 GEO Reporter — a Claude Code skill bundle for Generative Engine Optimization (GEO) audits. Highly influenced by, and forked from, [zubair-trabzada/geo-seo-claude](https://github.com/zubair-trabzada/geo-seo-claude); now maintained on its own line of development.
 
-The user-facing entry is the `/geo` slash command. Sub-skills under `skills/geo-*/` cover specific audit dimensions (citability, AI crawler access, schema, technical, content, etc.). Python utilities under `scripts/` do the heavy lifting (page fetching, bot probing, PDF generation).
+The user-facing entry is the `/geo` slash command. Sub-skills under `skills/geo-*/` cover specific audit dimensions (citability, AI crawler access, schema, technical, content, etc.). Python utilities under `scripts/` do the heavy lifting (page fetching, bot probing, citability scoring).
 
 ## Repo layout (the parts that matter)
 
 | Path | What's there |
 |---|---|
 | `geo/SKILL.md` | Main `/geo` skill orchestrator |
-| `skills/geo-*/SKILL.md` | 15 sub-skills, each focused on one audit dimension |
+| `skills/geo-*/SKILL.md` | 14 sub-skills, each focused on one audit dimension |
 | `agents/geo-*.md` | 5 parallel subagents used by `geo-audit` |
 | `scripts/fetch_page.py` | Page fetching, robots.txt parsing, **live AI crawler probe** (`bots` mode) |
 | `scripts/citability_scorer.py` | AI citability scoring engine |
 | `scripts/brand_scanner.py` | Brand mention detection |
 | `scripts/llmstxt_generator.py` | llms.txt validation & generation |
-| `scripts/generate_pdf_report.py` | PDF report generator (ReportLab) |
 | `tests/` | pytest suite (60 tests at v0.2.0) |
 | `.github/workflows/claude-review.yml` | Claude PR review on `needs-review` label |
 | `CHANGELOG.md` | Keep a Changelog format, semver |
@@ -98,7 +97,7 @@ When porting commits from upstream (`zubair-trabzada/geo-seo-claude`) or any oth
 ## Things that should NOT be in this repo
 
 - The `geo-observe` skill — it's a separate parallel implementation that lives only in `~/.claude/skills/geo-observe/`. Don't add it here.
-- Per-client audit outputs (e.g. `GEO-CLIENT-REPORT-*.md` / `GEO-REPORT-*.pdf`). The `examples/` dir is for demonstrations; real client work belongs outside the repo.
+- Per-client audit outputs (e.g. `GEO-CLIENT-REPORT-*.md`). The `examples/` dir is for demonstrations; real client work belongs outside the repo.
 - API keys, tokens, or `~/.geo-prospects/` data. These live in the user's environment, never in the repo.
 
 ## Quick links

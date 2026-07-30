@@ -22,7 +22,6 @@ def inject_now():
     return {"now": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 CRM_PATH = Path.home() / ".geo-prospects" / "prospects.json"
-PROPOSALS_DIR = Path.home() / ".geo-prospects" / "proposals"
 AUDITS_DIR = Path.home() / ".geo-prospects" / "audits"
 
 
@@ -70,14 +69,6 @@ def crm_stats(prospects: list[dict]) -> dict:
         "avg_score": avg_score,
         "avg_tier": score_tier(avg_score),
     }
-
-def find_pdf(prospect: dict) -> Path | None:
-    """Find the PDF file for a prospect."""
-    domain = prospect.get("domain", "")
-    for f in sorted(PROPOSALS_DIR.glob(f"{domain}*.pdf"), reverse=True):
-        return f
-    return None
-
 
 # ── Template filters ────────────────────────────────────────────────────
 
@@ -137,13 +128,9 @@ def prospect_detail(pid):
     if not p:
         abort(404)
 
-    pdf_path = find_pdf(p)
-    has_pdf = pdf_path is not None
-
     return render_template(
         "prospect.html",
         p=p,
-        has_pdf=has_pdf,
         STATUS_META=STATUS_META,
         statuses=list(STATUS_META.keys()),
     )
@@ -187,25 +174,6 @@ def update_status(pid):
 
     meta = STATUS_META.get(p["status"], {})
     return f'<span class="badge bg-{meta["badge"]} fs-6">{meta["icon"]} {meta["label"]}</span>'
-
-
-@app.route("/prospect/<pid>/pdf")
-def download_pdf(pid):
-    prospects = load_prospects()
-    p = next((x for x in prospects if x.get("id") == pid), None)
-    if not p:
-        abort(404)
-
-    pdf_path = find_pdf(p)
-    if not pdf_path:
-        abort(404)
-
-    return send_file(
-        pdf_path,
-        as_attachment=True,
-        download_name=pdf_path.name,
-        mimetype="application/pdf",
-    )
 
 
 # ── Run ─────────────────────────────────────────────────────────────────

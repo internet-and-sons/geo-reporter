@@ -18,7 +18,7 @@
 
 GEO Reporter is a Claude Code plugin that audits how visible a website is to AI search engines — ChatGPT, Claude, Perplexity, Google AI Overviews and AI Mode, Bing Copilot, and others — and produces a client-ready report with concrete, owner-tagged fixes.
 
-You point it at a URL. It runs the audit. You get back a score out of 100, a prioritized action plan, and a PDF you can hand to a client or your team. Setup is a single command after install.
+You point it at a URL. It runs the audit. You get back a score out of 100, a prioritized action plan, and a markdown report you can hand to a client or your team. Setup is a single command after install.
 
 Generative Engine Optimization (GEO) is the practice of making a site easy for AI systems to discover, understand, trust, and cite. It overlaps with traditional SEO but has distinct requirements — a page can rank well in Google and still never be quoted in an AI answer.
 
@@ -155,7 +155,6 @@ That's it. You can now type `/geo audit <your-site>` in any Claude chat.
 ```
 /geo audit https://acme.com       # Full GEO + SEO audit with composite score
 /geo quick https://acme.com       # 60-second visibility snapshot
-/geo report-pdf                   # Polished PDF you can send to a client
 ```
 
 | Command | What it does |
@@ -174,9 +173,8 @@ That's it. You can now type `/geo audit <your-site>` in any Claude chat.
 | `/geo technical <url>` | Technical SEO audit |
 | `/geo content <url>` | Content quality & E-E-A-T assessment |
 | `/geo report <url>` | Client-ready markdown report |
-| `/geo report-pdf` | Professional PDF report with charts |
 
-For agencies: `/geo prospect`, `/geo proposal`, and `/geo compare` manage client pipelines, generate proposals, and produce month-over-month delta reports.
+For agencies: `/geo prospect` and `/geo compare` manage client pipelines and produce month-over-month delta reports.
 
 ---
 
@@ -192,7 +190,7 @@ Every report follows a written contract of **13 rules**, because a technically-c
 - **Per-language sections** for bilingual sites; raw tables demoted to an appendix.
 - **Third-party sites** are labelled "External Observation Only" with no score — you cannot credibly grade a site whose context you do not have.
 
-Output is markdown plus an optional PDF with score gauges, charts, and color-coded tables.
+Output is a markdown report: scored findings, evidence, and a prioritized action plan you can paste into a doc or send as-is.
 
 ---
 

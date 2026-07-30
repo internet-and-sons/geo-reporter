@@ -131,9 +131,7 @@ geo-reporter/
 │   ├── geo-technical/            # Technical SEO + agent-readiness
 │   ├── geo-content/              # Content quality & E-E-A-T
 │   ├── geo-report/               # Markdown report generation
-│   ├── geo-report-pdf/           # PDF report with charts
 │   ├── geo-prospect/             # CRM-lite prospect pipeline
-│   ├── geo-proposal/             # Auto-generate client proposals
 │   └── geo-compare/              # Monthly delta tracking
 ├── agents/                       # 5 parallel subagents
 ├── scripts/                      # Python utilities
@@ -182,12 +180,11 @@ geo-reporter/
 
 ## Data storage
 
-The CRM and reporting skills (`/geo prospect`, `/geo proposal`, `/geo compare`) store runtime data outside the Claude Code directory:
+The CRM and reporting skills (`/geo prospect`, `/geo compare`) store runtime data outside the Claude Code directory:
 
 ```
 ~/.geo-prospects/
 ├── prospects.json              # Client/prospect pipeline data
-├── proposals/                  # Generated proposal documents
 └── reports/                    # Monthly delta reports
 ```
 

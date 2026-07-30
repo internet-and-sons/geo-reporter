@@ -36,10 +36,8 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 | `/geo technical <url>` | Traditional technical SEO audit |
 | `/geo content <url>` | Content quality and E-E-A-T assessment |
 | `/geo report <url>` | Generate client-ready GEO deliverable |
-| `/geo report-pdf <url>` | Generate professional PDF report with charts and scores |
 | `/geo quick <url>` | 60-second GEO visibility snapshot |
 | `/geo prospect <cmd>` | CRM-lite: manage prospects through the sales pipeline |
-| `/geo proposal <domain>` | Auto-generate client proposal from audit data |
 | `/geo compare <domain>` | Monthly delta report: show score improvements to client |
 
 ---
@@ -117,7 +115,7 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 
 ---
 
-## Sub-Skills (15 Specialized Components)
+## Sub-Skills (14 Specialized Components)
 
 | # | Skill | Directory | Purpose |
 |---|-------|-----------|---------|
@@ -132,10 +130,9 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 | 9 | geo-content | `skills/geo-content/` | Content quality and E-E-A-T |
 | 10 | geo-report | `skills/geo-report/` | Client-ready deliverable generation |
 | 11 | geo-prospect | `skills/geo-prospect/` | CRM-lite prospect and client pipeline management |
-| 12 | geo-proposal | `skills/geo-proposal/` | Auto-generate client proposals from audit data |
-| 13 | geo-compare | `skills/geo-compare/` | Monthly delta tracking and progress reports |
-| 14 | geo-agentready | `skills/geo-agentready/` | Agent-readiness & AI-licensing surface (`/geo agentready` → `geo-agentready`, non-scoring) |
-| 15 | geo-integrity | `skills/geo-integrity/` | Content-integrity / GEO-spam & prompt-injection scan (`/geo integrity` → `geo-integrity`, non-scoring) |
+| 12 | geo-compare | `skills/geo-compare/` | Monthly delta tracking and progress reports |
+| 13 | geo-agentready | `skills/geo-agentready/` | Agent-readiness & AI-licensing surface (`/geo agentready` → `geo-agentready`, non-scoring) |
+| 14 | geo-integrity | `skills/geo-integrity/` | Content-integrity / GEO-spam & prompt-injection scan (`/geo integrity` → `geo-integrity`, non-scoring) |
 
 ---
 
@@ -168,37 +165,9 @@ All commands generate structured output:
 | `/geo technical` | `GEO-TECHNICAL-AUDIT.md` |
 | `/geo content` | `GEO-CONTENT-ANALYSIS.md` |
 | `/geo report` | `GEO-CLIENT-REPORT-<DOMAIN-SLUG>.md` (presentation-ready) |
-| `/geo report-pdf` | `GEO-REPORT-<DOMAIN-SLUG>.pdf` (professional PDF with charts) |
 | `/geo quick` | Inline summary (no file) |
 | `/geo prospect` | Updates `~/.geo-prospects/prospects.json` |
-| `/geo proposal` | `~/.geo-prospects/proposals/<domain>-proposal-<date>.md` |
 | `/geo compare` | `~/.geo-prospects/reports/<domain>-monthly-<YYYY-MM>.md` |
-
----
-
-## PDF Report Generation
-
-The `/geo report-pdf <url>` command generates a professional, branded PDF report:
-
-### How It Works
-1. Run the full audit or individual analyses first
-2. Collect all scores and findings into a JSON structure
-3. Execute the PDF generator: `python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/geo}/scripts/generate_pdf_report.py" data.json GEO-REPORT-<DOMAIN-SLUG>.pdf` (where `<DOMAIN-SLUG>` is the audited domain with `www.` stripped, dots replaced by hyphens, and uppercased — e.g. `example.co.uk` → `EXAMPLE-CO-UK`)
-
-### What the PDF Includes
-- **Cover page** with GEO score gauge visualization
-- **Score breakdown** with color-coded bar charts
-- **AI Platform Readiness** dashboard with horizontal bar chart
-- **Crawler Access** status table with color-coded Allow/Block
-- **Key Findings** categorized by severity (Critical/High/Medium/Low)
-- **Prioritized Action Plan** (Quick Wins, Medium-Term, Strategic)
-- **Methodology & Glossary** appendix
-
-### Workflow
-1. First run `/geo audit <url>` to collect all data
-2. Then run `/geo report-pdf <url>` to generate the PDF
-3. The tool will compile audit data into JSON, then generate the PDF
-4. Output: `GEO-REPORT-<DOMAIN-SLUG>.pdf` in the current directory
 
 ---
 

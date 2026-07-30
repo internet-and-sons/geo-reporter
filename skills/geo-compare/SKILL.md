@@ -313,4 +313,4 @@ If the baseline audit predates a boundary the current audit is past, say so expl
    New issues found: 2 (minor)
    On track for Month 6 target: YES (65/100)
    ```
-3. Suggest next action: "Share with client or run `/geo report-pdf` for a visual version"
+3. Suggest next action: "Share the markdown report with the client"

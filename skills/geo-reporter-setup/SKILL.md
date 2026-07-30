@@ -1,6 +1,6 @@
 ---
 name: geo-reporter-setup
-description: First-time setup for GEO Reporter. Installs Python dependencies required by the audit scripts (fetch_page.py, generate_pdf_report.py, citability_scorer.py, etc.). Run this once after installing the plugin. Triggers on "/geo-reporter:setup", "setup geo reporter", "install geo dependencies", or "geo setup".
+description: First-time setup for GEO Reporter. Installs Python dependencies required by the audit scripts (fetch_page.py, citability_scorer.py, brand_scanner.py, etc.). Run this once after installing the plugin. Triggers on "/geo-reporter:setup", "setup geo reporter", "install geo dependencies", or "geo setup".
 allowed-tools: Bash
 ---
 

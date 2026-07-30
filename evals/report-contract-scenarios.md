@@ -1,6 +1,6 @@
 # Report-Contract Eval Scenarios (manual)
 
-Run these after any change to geo-audit, geo-report, geo-report-pdf, or agent
+Run these after any change to geo-audit, geo-report, or agent
 output formats. Each scenario: run the command, then check every assertion.
 A scenario fails if ANY assertion fails. Record results in the PR description.
 

@@ -81,7 +81,6 @@
         <th>Audit</th>
         <th class="text-end">MRR</th>
         <th class="text-center">Proposta</th>
-        <th class="text-center">PDF</th>
       </tr>
     </thead>
     <tbody>
@@ -110,13 +109,6 @@
           {% else %}
             <span class="text-secondary">—</span>
           {% endif %}
-        </td>
-        <td class="text-center" onclick="event.stopPropagation()">
-          <a href="/prospect/{{ p.id }}/pdf"
-             class="btn btn-sm btn-outline-danger {% if not p.proposal_file %}disabled{% endif %}"
-             title="Scarica PDF">
-            <i class="bi bi-file-earmark-pdf"></i>
-          </a>
         </td>
       </tr>
       {% endfor %}
