@@ -64,3 +64,22 @@ Command: `/geo audit <a competitor or third-party URL>` (answer "competitor" if 
 - [ ] The crawl is capped (homepage + ≤20 pages), and the methodology says so
 - [ ] Output is framed as observations/opportunities, not a graded verdict
 - [ ] If ownership was ambiguous, the tool asked "your own site, or a competitor's / third party's?"
+
+## Scenario 8 — Right-unit selection
+
+Command: `/geo audit <a section / category / tag URL on a publisher site>`
+- [ ] The report states which unit was audited and why (listing → the articles beneath it)
+- [ ] Findings are about the sampled articles, NOT the listing's H1 count, meta description, or teaser citability
+- [ ] Recurring findings are written as canonical fixes, each labelled **domain** / **template** / **editorial**
+- [ ] The listing page is assessed only as a discovery path (crawlable, links its articles, links resolve)
+- [ ] Articles excluded from the sample are named with a reason (failed to fetch, or cross-language-tree), never silently dropped or estimated
+- [ ] On a multilingual site, samples are per language tree — never pooled into one score
+
+## Scenario 9 — Inconclusive is not absent
+
+Command: `/geo agentready <a Cloudflare-fronted site>` and `/geo brands <a site with Wikipedia + Facebook sameAs links>`
+- [ ] agentready: checks the site refused (401/403/429) render as "— Not measured", never as absent
+- [ ] agentready: the report distinguishes "no agent endpoints found" from "could not determine from outside"
+- [ ] brands: only genuinely-failing links (404/410/DNS) appear as broken-link findings
+- [ ] brands: links the platform refused to answer appear as a note, not a finding — a live Wikidata or Facebook link is never reported as broken
+- [ ] citability: when `fetch_method` is `bot_ua_fallback`, the methodology says scores reflect the AI-crawler view
