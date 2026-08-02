@@ -8,6 +8,33 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-30
+
+**Theme: one report, one audience.** The markdown GEO report is the deliverable. The audience is technically savvy site owners and SEO/GEO developers. Everything that served a different deliverable or a different audience is removed.
+
+### Removed
+
+- **`/geo report-pdf`, `scripts/generate_pdf_report.py`, the `geo-report-pdf` skill, and the ReportLab dependency** — 1,541 lines. The generator was a second renderer of the same report contract `geo-report` already renders in markdown, so every contract change had to be implemented twice. That duplication was not free: it caused the "all 11 rules" drift after the contract grew to 13, and in v0.4.3 it shipped a crash to clients — a finding recommending `<link rel=canonical>`, an everyday SEO recommendation, aborted PDF generation outright. The feature was carried over from the upstream library and no client uses it. Dropping ReportLab also removes the only heavyweight dependency in `requirements.txt`.
+- **`/geo proposal` and the `geo-proposal` skill** (347 lines) — a sales-proposal generator, off-focus for the project. The CRM layer is unchanged: `geo-prospect`, `crm_dashboard.py` and the webapp still track a prospect's `proposal_file` and pipeline status; only the generator is gone.
+- **The CRM layer** — `/geo prospect` and the `geo-prospect` skill, `scripts/crm_dashboard.py`, the Flask webapp (`scripts/webapp/`), and `examples/prospects-demo.json`. A sales-pipeline CRM carried over from the upstream library, serving an agency workflow rather than the site owners and SEO/GEO developers this project is for. `geo-compare` stays: delta reports between audit runs serve the report, not the pipeline, and it now points users at `/geo audit` instead of the removed prospect flow.
+- **Four Python dependencies** — `reportlab` (PDF), `flask` (webapp), `rich` (CRM dashboard), plus `Pillow` and `validators`, which turned out to have no remaining importer once the generators were gone. `requirements.txt` is down to the five packages the audit actually uses.
+- **The webapp's proposal-PDF download** — dead since the day it shipped: it globbed `~/.geo-prospects/proposals/*.pdf`, and nothing ever wrote a PDF there (`geo-proposal` produced only markdown). Every prospect showed "PDF non disponibile".
+
+### Added
+
+- **`tests/test_no_pdf_surface.py`** — a guard that scans 17 files for dangling references to the removed surfaces, so a partial revert cannot leave the skills advertising commands that no longer exist. The plain words "PDF" and "proposal" stay allowed: `geo-audit` legitimately skips PDFs as crawl input, and the CRM legitimately tracks a proposal pipeline.
+- **Retired-skill pruning in `install.sh` / `install-win.sh`** — the install copy loop is additive, so a skill removed from the repo survived forever in `~/.claude/skills`, advertising a command whose backing script no longer exists. Upgrades now remove `geo-report-pdf`, `geo-proposal` and `geo-prospect` by name; user-only skills are never touched. Verified against a real stale install: retired directories pruned, `geo-observe` preserved.
+
+### Migration
+
+If you need a PDF, render the markdown report with any converter, e.g.:
+
+```bash
+pandoc GEO-AUDIT-REPORT.md -o report.pdf
+```
+
+You lose the branded cover, score gauges and color-coded tables; you keep every finding, score and action item, because they all live in the markdown.
+
 ## [0.4.5] — 2026-07-30
 
 **Theme: stop reporting expected behaviour as a defect.** v0.4.4 taught the audit to look at the right unit. The first audit that did so — the same `zman.co.il/democracy` section that prompted it — immediately exposed two ways the tool was manufacturing problems that did not exist. Both were pre-existing; neither was in v0.4.4's new code. Looking at the right thing is what made them visible.
@@ -315,7 +342,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.5.0
 [0.4.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.5
 [0.4.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.4
 [0.4.3]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.3

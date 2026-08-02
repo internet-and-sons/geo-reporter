@@ -1,6 +1,6 @@
 # GEO Reporter — Report Contract
 
-Every user-facing audit output (geo-audit, geo-report, geo-report-pdf, and each
+Every user-facing audit output (geo-audit, geo-report, and each
 subagent's report section) MUST follow these rules. The reader is assumed
 non-technical. The report is the product.
 

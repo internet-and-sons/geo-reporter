@@ -170,6 +170,19 @@ main() {
     print_success "Main skill installed -> ${INSTALL_DIR}/"
 
     # ---- Install Sub-Skills ----
+    # ---- Prune skills retired from GEO Reporter ----
+    # The copy loop below is additive, so a skill removed from the repo
+    # would otherwise survive forever in the skills dir — advertising
+    # a command whose backing script no longer exists. Only names that
+    # were ours are pruned; user-only skills are never touched.
+    RETIRED_SKILLS="geo-report-pdf geo-proposal geo-prospect"
+    for retired in $RETIRED_SKILLS; do
+        if [ -d "${SKILLS_DIR}/${retired}" ]; then
+            rm -rf "${SKILLS_DIR:?}/${retired}"
+            print_info "  removed retired skill: ${retired}"
+        fi
+    done
+
     print_info "Installing sub-skills..."
 
     SKILL_COUNT=0
@@ -306,7 +319,6 @@ main() {
     echo "    /geo technical <url>  Technical SEO audit"
     echo "    /geo content <url>    Content quality & E-E-A-T"
     echo "    /geo report <url>     Client-ready GEO report"
-    echo "    /geo report-pdf       Generate PDF report from audit data"
     echo ""
     echo "  Documentation: https://github.com/internet-and-sons/geo-reporter"
     echo ""

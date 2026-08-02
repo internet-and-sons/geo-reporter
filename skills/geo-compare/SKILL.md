@@ -46,7 +46,7 @@ If only domain is provided:
 2. Sort by date
 3. Use oldest as baseline, newest as current
 4. If only one file exists: use it as baseline, run a fresh quick audit as current
-5. If no files exist: suggest running `/geo prospect audit <domain>` first
+5. If no files exist: suggest running `/geo audit <domain>` and saving the report into that directory first
 
 ### Step 2: Parse Both Audits
 
@@ -313,4 +313,4 @@ If the baseline audit predates a boundary the current audit is past, say so expl
    New issues found: 2 (minor)
    On track for Month 6 target: YES (65/100)
    ```
-3. Suggest next action: "Share with client or run `/geo report-pdf` for a visual version"
+3. Suggest next action: "Share the markdown report with the client"
