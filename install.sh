@@ -194,6 +194,13 @@ main() {
     print_info "Installing utility scripts..."
 
     if [ -d "$SOURCE_DIR/scripts" ]; then
+        # Wipe before copying: the copy is additive, so a script removed
+        # from the repo (e.g. the PDF generator retired in v0.5.0) would
+        # otherwise survive forever in the installed copy. Unlike
+        # ~/.claude/skills, this directory is wholly owned by GEO
+        # Reporter — nothing user-authored lives here.
+        rm -rf "${INSTALL_DIR:?}/scripts"
+        mkdir -p "$INSTALL_DIR/scripts"
         cp -r "$SOURCE_DIR/scripts/"* "$INSTALL_DIR/scripts/"
         chmod +x "$INSTALL_DIR/scripts/"*.py 2>/dev/null || true
         print_success "Scripts installed → ${INSTALL_DIR}/scripts/"

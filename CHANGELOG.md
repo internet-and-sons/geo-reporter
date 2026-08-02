@@ -8,6 +8,10 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+### Fixed
+
+- **Removed scripts survived upgrades in the installed copy.** The v0.5.0 deploy verification found `generate_pdf_report.py` and `crm_dashboard.py` still present in `~/.claude/skills/geo/scripts/` after installing the release — the scripts copy is additive, the same class of bug the retired-skill pruning fixed one level up. Both installers now wipe `INSTALL_DIR/scripts` before copying; unlike `~/.claude/skills`, that directory is wholly owned by GEO Reporter, so no name list is needed and future script removals deploy correctly by construction.
+
 ## [0.5.0] — 2026-07-30
 
 **Theme: one report, one audience.** The markdown GEO report is the deliverable. The audience is technically savvy site owners and SEO/GEO developers. Everything that served a different deliverable or a different audience is removed.
