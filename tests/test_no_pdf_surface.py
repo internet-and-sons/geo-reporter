@@ -112,10 +112,11 @@ class TestNoDanglingReferences:
             if content is None:
                 continue
             for line_no, line in enumerate(content.splitlines(), 1):
-                # The install scripts' prune list must name the retired
-                # skills in order to delete them — that is the one place
-                # naming the surface is the fix, not a dangling reference.
-                if "RETIRED_SKILLS" in line:
+                # The install scripts' prune list and the uninstaller's
+                # removal list must name the retired skills in order to
+                # delete them — the only places naming the surface is
+                # the fix, not a dangling reference.
+                if "RETIRED_SKILLS" in line or "GEO_REPORTER_SKILLS" in line:
                     continue
                 for pattern in FORBIDDEN:
                     if pattern.search(line):
@@ -153,3 +154,42 @@ class TestUnrelatedMentionsSurvive:
         """Delta reports serve the report, not the sales pipeline."""
         assert os.path.exists(
             os.path.join(REPO, "skills", "geo-compare", "SKILL.md"))
+
+
+class TestUninstallerListsStayInSync:
+    """uninstall.sh removes only GEO Reporter's own skills and agents, by
+    explicit name — a bare geo-*/ glob would also delete user-authored
+    skills sharing the prefix (a real geo-observe nearly went this way).
+
+    The cost of explicit lists is drift, so this pins them to the repo:
+    every shipped skill/agent must be in the list (or uninstall leaves
+    it behind), and everything else in the list must be a known retired
+    name (or uninstall would delete something that was never ours).
+    """
+
+    RETIRED = {"geo-report-pdf", "geo-proposal", "geo-prospect"}
+
+    def _list_from_uninstall(self, var):
+        content = _read("uninstall.sh") or ""
+        match = re.search(rf'{var}="([^"]+)"', content)
+        assert match, f"{var} not found in uninstall.sh"
+        return set(match.group(1).split())
+
+    def test_skill_list_matches_shipped_plus_retired(self):
+        shipped = {
+            name for name in os.listdir(os.path.join(REPO, "skills"))
+            if name.startswith("geo-")
+        }
+        listed = self._list_from_uninstall("GEO_REPORTER_SKILLS")
+        assert listed == shipped | self.RETIRED, (
+            f"missing from uninstall.sh: {sorted((shipped | self.RETIRED) - listed)}; "
+            f"unknown in uninstall.sh: {sorted(listed - shipped - self.RETIRED)}"
+        )
+
+    def test_agent_list_matches_shipped(self):
+        shipped = {
+            name[:-3] for name in os.listdir(os.path.join(REPO, "agents"))
+            if name.endswith(".md")
+        }
+        listed = self._list_from_uninstall("GEO_REPORTER_AGENTS")
+        assert listed == shipped
