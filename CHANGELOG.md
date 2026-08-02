@@ -8,6 +8,8 @@ GEO Reporter is a fork of, and is highly influenced by, [zubair-trabzada/geo-seo
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-08-02
+
 ### Fixed
 
 - **Removed scripts survived upgrades in the installed copy.** The v0.5.0 deploy verification found `generate_pdf_report.py` and `crm_dashboard.py` still present in `~/.claude/skills/geo/scripts/` after installing the release — the scripts copy is additive, the same class of bug the retired-skill pruning fixed one level up. Both installers now wipe `INSTALL_DIR/scripts` before copying; unlike `~/.claude/skills`, that directory is wholly owned by GEO Reporter, so no name list is needed and future script removals deploy correctly by construction.
@@ -346,7 +348,8 @@ Inaugural release of GEO Reporter as a distinct project.
 - Upstream-author Skool community funnel section in README, replaced with a neutral Contributing stub.
 - `geo-seo-claude` branding from rendered output across CLI banners, PDF report headers, and webapp page titles.
 
-[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/internet-and-sons/geo-reporter/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.5.1
 [0.5.0]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.5.0
 [0.4.5]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.5
 [0.4.4]: https://github.com/internet-and-sons/geo-reporter/releases/tag/v0.4.4
