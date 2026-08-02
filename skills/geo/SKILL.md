@@ -37,7 +37,6 @@ allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 | `/geo content <url>` | Content quality and E-E-A-T assessment |
 | `/geo report <url>` | Generate client-ready GEO deliverable |
 | `/geo quick <url>` | 60-second GEO visibility snapshot |
-| `/geo prospect <cmd>` | CRM-lite: manage prospects through the sales pipeline |
 | `/geo compare <domain>` | Monthly delta report: show score improvements to client |
 
 ---
@@ -115,7 +114,7 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 
 ---
 
-## Sub-Skills (14 Specialized Components)
+## Sub-Skills (13 Specialized Components)
 
 | # | Skill | Directory | Purpose |
 |---|-------|-----------|---------|
@@ -129,10 +128,9 @@ Adjust recommendations based on detected type. Local businesses need LocalBusine
 | 8 | geo-technical | `skills/geo-technical/` | Technical SEO foundations |
 | 9 | geo-content | `skills/geo-content/` | Content quality and E-E-A-T |
 | 10 | geo-report | `skills/geo-report/` | Client-ready deliverable generation |
-| 11 | geo-prospect | `skills/geo-prospect/` | CRM-lite prospect and client pipeline management |
-| 12 | geo-compare | `skills/geo-compare/` | Monthly delta tracking and progress reports |
-| 13 | geo-agentready | `skills/geo-agentready/` | Agent-readiness & AI-licensing surface (`/geo agentready` → `geo-agentready`, non-scoring) |
-| 14 | geo-integrity | `skills/geo-integrity/` | Content-integrity / GEO-spam & prompt-injection scan (`/geo integrity` → `geo-integrity`, non-scoring) |
+| 11 | geo-compare | `skills/geo-compare/` | Monthly delta tracking and progress reports |
+| 12 | geo-agentready | `skills/geo-agentready/` | Agent-readiness & AI-licensing surface (`/geo agentready` → `geo-agentready`, non-scoring) |
+| 13 | geo-integrity | `skills/geo-integrity/` | Content-integrity / GEO-spam & prompt-injection scan (`/geo integrity` → `geo-integrity`, non-scoring) |
 
 ---
 
@@ -166,7 +164,6 @@ All commands generate structured output:
 | `/geo content` | `GEO-CONTENT-ANALYSIS.md` |
 | `/geo report` | `GEO-CLIENT-REPORT-<DOMAIN-SLUG>.md` (presentation-ready) |
 | `/geo quick` | Inline summary (no file) |
-| `/geo prospect` | Updates `~/.geo-prospects/prospects.json` |
 | `/geo compare` | `~/.geo-prospects/reports/<domain>-monthly-<YYYY-MM>.md` |
 
 ---

@@ -13,7 +13,7 @@ The user-facing entry is the `/geo` slash command. Sub-skills under `skills/geo-
 | Path | What's there |
 |---|---|
 | `geo/SKILL.md` | Main `/geo` skill orchestrator |
-| `skills/geo-*/SKILL.md` | 14 sub-skills, each focused on one audit dimension |
+| `skills/geo-*/SKILL.md` | 13 sub-skills, each focused on one audit dimension |
 | `agents/geo-*.md` | 5 parallel subagents used by `geo-audit` |
 | `scripts/fetch_page.py` | Page fetching, robots.txt parsing, **live AI crawler probe** (`bots` mode) |
 | `scripts/citability_scorer.py` | AI citability scoring engine |

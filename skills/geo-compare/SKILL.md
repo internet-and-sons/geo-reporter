@@ -46,7 +46,7 @@ If only domain is provided:
 2. Sort by date
 3. Use oldest as baseline, newest as current
 4. If only one file exists: use it as baseline, run a fresh quick audit as current
-5. If no files exist: suggest running `/geo prospect audit <domain>` first
+5. If no files exist: suggest running `/geo audit <domain>` and saving the report into that directory first
 
 ### Step 2: Parse Both Audits
 

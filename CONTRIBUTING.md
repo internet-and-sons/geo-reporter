@@ -131,7 +131,6 @@ geo-reporter/
 │   ├── geo-technical/            # Technical SEO + agent-readiness
 │   ├── geo-content/              # Content quality & E-E-A-T
 │   ├── geo-report/               # Markdown report generation
-│   ├── geo-prospect/             # CRM-lite prospect pipeline
 │   └── geo-compare/              # Monthly delta tracking
 ├── agents/                       # 5 parallel subagents
 ├── scripts/                      # Python utilities
@@ -180,15 +179,14 @@ geo-reporter/
 
 ## Data storage
 
-The CRM and reporting skills (`/geo prospect`, `/geo compare`) store runtime data outside the Claude Code directory:
+The reporting skill `/geo compare` stores runtime data outside the Claude Code directory:
 
 ```
 ~/.geo-prospects/
-├── prospects.json              # Client/prospect pipeline data
 └── reports/                    # Monthly delta reports
 ```
 
-This directory is **not removed** by the uninstaller — delete it manually if you no longer need your prospect data.
+This directory is **not removed** by the uninstaller — delete it manually if you no longer need the saved audits and reports.
 
 ## Uninstall
 

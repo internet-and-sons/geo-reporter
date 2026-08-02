@@ -174,7 +174,7 @@ That's it. You can now type `/geo audit <your-site>` in any Claude chat.
 | `/geo content <url>` | Content quality & E-E-A-T assessment |
 | `/geo report <url>` | Client-ready markdown report |
 
-For agencies: `/geo prospect` and `/geo compare` manage client pipelines and produce month-over-month delta reports.
+For repeat audits: `/geo compare` produces month-over-month delta reports between two audit runs.
 
 ---
 

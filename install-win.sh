@@ -175,7 +175,7 @@ main() {
     # would otherwise survive forever in the skills dir — advertising
     # a command whose backing script no longer exists. Only names that
     # were ours are pruned; user-only skills are never touched.
-    RETIRED_SKILLS="geo-report-pdf geo-proposal"
+    RETIRED_SKILLS="geo-report-pdf geo-proposal geo-prospect"
     for retired in $RETIRED_SKILLS; do
         if [ -d "${SKILLS_DIR}/${retired}" ]; then
             rm -rf "${SKILLS_DIR:?}/${retired}"

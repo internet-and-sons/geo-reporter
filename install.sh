@@ -153,7 +153,7 @@ main() {
     # a command whose backing script no longer exists. Only names that
     # were ours are pruned; user-only skills (e.g. geo-observe) are
     # never touched.
-    RETIRED_SKILLS="geo-report-pdf geo-proposal"
+    RETIRED_SKILLS="geo-report-pdf geo-proposal geo-prospect"
     for retired in $RETIRED_SKILLS; do
         if [ -d "${SKILLS_DIR}/${retired}" ]; then
             rm -rf "${SKILLS_DIR:?}/${retired}"
