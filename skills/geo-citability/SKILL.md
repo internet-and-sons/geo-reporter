@@ -14,7 +14,7 @@ allowed-tools:
 
 ## Core Insight
 
-AI language models cite passages that meet specific structural criteria. Research from Princeton, Georgia Tech, and IIT Delhi (2024) found that GEO-optimized content achieves 30-115% higher visibility in AI-generated responses. The key finding: AI systems preferentially extract and cite passages that are **134-167 words long**, **self-contained** (understandable without surrounding context), **fact-rich** (containing specific statistics, dates, or named entities), and **directly answer a question** in the first 1-2 sentences.
+AI language models cite passages that meet specific structural criteria. Research from Princeton, Georgia Tech, and IIT Delhi (KDD 2024) found that GEO strategies — adding statistics, quotations, and source citations — achieve 30-115% higher visibility in AI-generated responses. Separately, a correlational industry analysis of AI Overview passages (Bortolato 2025) observed that cited passages cluster at **134-167 words** — a heuristic band, not an experimentally established threshold. In practice, AI systems preferentially extract and cite passages that are **self-contained** (understandable without surrounding context), **fact-rich** (containing specific statistics, dates, or named entities), and **directly answer a question** in the first 1-2 sentences.
 
 This is fundamentally different from traditional SEO copywriting, which optimizes for keyword density and user engagement metrics. GEO citability optimizes for **extractability** -- the ease with which an AI system can pull a passage from your content and present it as a direct answer.
 
@@ -188,7 +188,7 @@ Fields:
 | `average_citability_score_all_blocks` | The same average with interface chrome left in — for disclosure, never the headline |
 | `chrome_elements_removed` | Share/subscribe/support widgets stripped at the DOM level |
 | `chrome_blocks_excluded` | Blocks that were still chrome after DOM stripping |
-| `optimal_length_passages` | Blocks in the AI sweet spot (Hebrew 90–120 words, English 134–167) |
+| `optimal_length_passages` | Blocks in the AI sweet spot (Hebrew 90–120 words, English 134–167). The Hebrew band is a morphological-density heuristic, not yet validated on a Hebrew corpus |
 | `grade_distribution` | `{A, B, C, D, F}` counts |
 | `top_5_citable[]` | Strongest blocks — each has `heading`, `content`, `word_count`, `total_score`, `breakdown` (per-dimension), `grade`, `is_chrome` |
 | `bottom_5_citable[]` | Weakest blocks — same shape, these are your rewrite targets |
@@ -313,7 +313,7 @@ Generate a file called `GEO-CITABILITY-SCORE.md`:
 
 ### Optimal Passage Characteristics (from GEO Research)
 
-- **Optimal length for AI citation:** 134-167 words (Bortolato 2025 analysis of AI Overview passages)
+- **Optimal length for AI citation:** 134-167 words (Bortolato 2025 correlational analysis of AI Overview passages)
 - **Definition patterns increase citation rate by:** 2.1x (Georgia Tech 2024)
 - **Adding statistics to passages increases citation by:** 40% (Princeton GEO study 2024)
 - **Adding quotations from authorities increases citation by:** 115% in certain categories (IIT Delhi 2024)
