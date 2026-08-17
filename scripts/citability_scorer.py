@@ -359,6 +359,8 @@ def _score_passage_he(text: str, heading: Optional[str] = None) -> dict:
     scores["answer_block_quality"] = min(abq_score, 30)
 
     # === 2. Self-Containment (25%) — recalibrated length band for Hebrew ===
+    # The 90-120 band scales the English 134-167 band by a morphological-density
+    # ratio; heuristic pending calibration on a real Hebrew corpus (GAP-ANALYSIS-2026-07 §2.8).
     sc_score = 0
     if 90 <= word_count <= 120:
         sc_score += 10
